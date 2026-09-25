@@ -24,6 +24,13 @@ export interface Chunk {
 async function* sse(res: Response): AsyncGenerator<{ event?: string; data: string }> {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buf = "";
+  try {
+    yield* frames();
+  } finally {
+    // Consumer stopped early (e.g. client hung up): cancel the upstream so it stops generating.
+    await reader.cancel().catch(() => {});
+  }
+  async function* frames(): AsyncGenerator<{ event?: string; data: string }> {
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -40,10 +47,12 @@ async function* sse(res: Response): AsyncGenerator<{ event?: string; data: strin
       if (data.length) yield { event, data: data.join("\n") };
     }
   }
+  }
 }
 
-async function* openaiStream(url: string, headers: Record<string, string>, body: Record<string, unknown>): AsyncGenerator<Chunk> {
+async function* openaiStream(url: string, headers: Record<string, string>, body: Record<string, unknown>, signal?: AbortSignal): AsyncGenerator<Chunk> {
   const res = await fetch(url, {
+    signal,
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify({ ...body, stream: true, stream_options: { include_usage: true } }),
@@ -94,8 +103,8 @@ export class LocalModel {
     };
   }
 
-  stream(messages: ChatMessage[], extra: Record<string, unknown> = {}): AsyncGenerator<Chunk> {
-    return openaiStream(`${this.baseUrl}/chat/completions`, {}, this.body(messages, extra));
+  stream(messages: ChatMessage[], extra: Record<string, unknown> = {}, signal?: AbortSignal): AsyncGenerator<Chunk> {
+    return openaiStream(`${this.baseUrl}/chat/completions`, {}, this.body(messages, extra), signal);
   }
 
   /** Plain question → text, for the local helpers (attack test, identifier tagging). */
@@ -116,7 +125,8 @@ export interface FrontierModel {
   readonly name: string;
   readonly configured: boolean;
   complete(model: string, messages: ChatMessage[]): Promise<Completion>;
-  stream(model: string, messages: ChatMessage[]): AsyncGenerator<Chunk>;
+  /** `signal` aborts the upstream request (client hung up). */
+  stream(model: string, messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<Chunk>;
 }
 
 const ANTHROPIC = "https://api.anthropic.com";
@@ -140,7 +150,7 @@ export class ClaudeModel implements FrontierModel {
     return !!this.apiKey;
   }
 
-  private request(model: string, messages: ChatMessage[], stream: boolean) {
+  private request(model: string, messages: ChatMessage[], stream: boolean, signal?: AbortSignal) {
     if (!this.apiKey) throw new Error("egress API key not set");
     const system = messages
       .filter((m) => m.role === "system")
@@ -158,6 +168,7 @@ export class ClaudeModel implements FrontierModel {
                 .join("\n") || "(empty)",
       }));
     return fetch(`${this.baseUrl}/v1/messages`, {
+      signal,
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -185,8 +196,8 @@ export class ClaudeModel implements FrontierModel {
     };
   }
 
-  async *stream(model: string, messages: ChatMessage[]): AsyncGenerator<Chunk> {
-    const res = await this.request(model, messages, true);
+  async *stream(model: string, messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<Chunk> {
+    const res = await this.request(model, messages, true, signal);
     if (!res.ok) throw new Error(`claude ${res.status}: ${await res.text()}`);
     let input = 0;
     for await (const { event, data } of sse(res)) {
@@ -238,8 +249,8 @@ export class OpenAICompatModel implements FrontierModel {
     };
   }
 
-  stream(model: string, messages: ChatMessage[]): AsyncGenerator<Chunk> {
+  stream(model: string, messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<Chunk> {
     if (!this.apiKey) throw new Error("egress API key not set");
-    return openaiStream(`${this.baseUrl}/chat/completions`, { authorization: `Bearer ${this.apiKey}` }, { model, messages });
+    return openaiStream(`${this.baseUrl}/chat/completions`, { authorization: `Bearer ${this.apiKey}` }, { model, messages }, signal);
   }
 }

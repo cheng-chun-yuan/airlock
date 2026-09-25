@@ -45,13 +45,16 @@ export function buildApp(d: AppDeps) {
 
     // Real token streaming. Requests with tools use the buffered path below (tool-call deltas aren't streamed yet).
     if (stream && !extra.tools) {
-      const { model: served, airlock, chunks } = await d.pipeline.stream(model, messages, opts);
+      const hangup = new AbortController();
+      const { model: served, airlock, chunks } = await d.pipeline.stream(model, messages, { ...opts, signal: hangup.signal });
       const base = { id: `chatcmpl-${airlock.requestId}`, object: "chat.completion.chunk", created, model: served };
       c.header("x-airlock-route", airlock.route);
       c.header("x-airlock-decision", airlock.decision);
       return streamSSE(c, async (s) => {
+        s.onAbort(() => hangup.abort());
         await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }], airlock }) });
         for await (const ch of chunks) {
+          if (s.aborted) break; // client hung up: stop pulling from upstream (the pipeline still audits the egress)
           if (ch.text) await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: ch.text }, finish_reason: null }] }) });
           if (ch.finishReason) await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: ch.finishReason }], ...(ch.usage && { usage: ch.usage }) }) });
         }
