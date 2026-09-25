@@ -40,3 +40,24 @@ test("verify checks action + signal binding locally, forwards to portal, rejects
   assert.equal((await v.verify(proof, payloadHash, "airlock-approve")).error, "proof already used");
   srv.close();
 });
+
+test("apps not migrated to World ID 4.0 fall back to the v2 endpoint with legacy field names", async () => {
+  const seen: { path: string; body: any }[] = [];
+  const srv = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c)).on("end", () => {
+      seen.push({ path: req.url!, body: JSON.parse(raw) });
+      res.setHeader("content-type", "application/json");
+      if (req.url!.includes("/api/v4/")) { res.statusCode = 400; res.end(JSON.stringify({ code: "app_not_migrated", detail: "use v2" })); }
+      else res.end(JSON.stringify({ success: true, nullifier_hash: "0x0a11ce" }));
+    });
+  }).listen(0);
+  const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  const v = new WorldIdVerifier({ appId: "app_test", rpId: "rp_test", signingKeyHex: key, environment: "staging", verifyBase: base, legacyBase: base });
+  const proof = { protocol_version: "3.0" as const, nonce: "n2", action: "airlock-approve", responses: [{ identifier: "orb", nullifier: "0x0a11ce", signal_hash: hashSignal(payloadHash), proof: "0xproof", merkle_root: "0xroot" }] };
+  assert.deepEqual(await v.verify(proof, payloadHash, "airlock-approve"), { ok: true, nullifier: "0x0a11ce", protocol: "3.0 (v2 endpoint)" });
+  assert.equal(seen[1].path, "/api/v2/verify/app_test");
+  assert.deepEqual(seen[1].body, { nullifier_hash: "0x0a11ce", merkle_root: "0xroot", proof: "0xproof", verification_level: "orb", action: "airlock-approve", signal_hash: hashSignal(payloadHash) });
+  assert.equal((await v.verify(proof, payloadHash, "airlock-approve")).error, "proof already used");
+  srv.close();
+});

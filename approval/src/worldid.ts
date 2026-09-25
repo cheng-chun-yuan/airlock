@@ -35,7 +35,8 @@ export interface WorldIdConfig {
   rpId: string;
   signingKeyHex: string;
   environment: "production" | "staging";
-  verifyBase?: string; // default developer.world.org
+  verifyBase?: string; // default developer.world.org (v4)
+  legacyBase?: string; // default developer.worldcoin.org (v2, apps not yet migrated to World ID 4.0)
 }
 
 /**
@@ -80,12 +81,38 @@ export class WorldIdVerifier implements ProofVerifier {
       body: JSON.stringify(proof),
     });
     const j = (await res.json().catch(() => ({}))) as { success?: boolean; code?: string; detail?: string };
+    if (j.code === "app_not_migrated") {
+      // App still on the pre-4.0 portal flow: legacy (v3) proofs verify on /api/v2 instead.
+      if (proof.protocol_version === "4.0") return { ok: false, error: "app not migrated to World ID 4.0; migrate it in the Developer Portal or request a legacy proof" };
+      const v2 = await this.verifyV2(proof, r);
+      if (v2.ok) this.used.add(replayKey);
+      return v2;
+    }
     if (!res.ok || !j.success) return { ok: false, error: j.code ? `${j.code}: ${j.detail ?? ""}` : `verify HTTP ${res.status}` };
     this.used.add(replayKey);
     if (proof.protocol_version === "4.0")
       // Still a verified human, but the nullifier won't match an enrollment made with another proof.
       return { ok: true, nullifier: r.nullifier, protocol: "4.0" };
     return { ok: true, nullifier: r.nullifier, protocol: proof.protocol_version };
+  }
+
+  /** Pre-4.0 endpoint; legacy field names (nullifier_hash, verification_level). The action must exist in the portal. */
+  private async verifyV2(proof: WorldIdProof, r: NonNullable<WorldIdProof["responses"]>[number]): Promise<VerifyResult> {
+    const res = await fetch(`${this.cfg.legacyBase ?? "https://developer.worldcoin.org"}/api/v2/verify/${this.cfg.appId}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        nullifier_hash: r.nullifier,
+        merkle_root: r.merkle_root,
+        proof: r.proof,
+        verification_level: r.identifier,
+        action: proof.action,
+        signal_hash: r.signal_hash,
+      }),
+    });
+    const j = (await res.json().catch(() => ({}))) as { success?: boolean; code?: string; detail?: string; nullifier_hash?: string };
+    if (!res.ok || !j.success) return { ok: false, error: j.code ? `${j.code}: ${j.detail ?? ""} (v2)` : `v2 verify HTTP ${res.status}` };
+    return { ok: true, nullifier: j.nullifier_hash ?? r.nullifier, protocol: "3.0 (v2 endpoint)" };
   }
 }
 
