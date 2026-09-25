@@ -1,0 +1,17 @@
+# Snippet for librechat.yaml → endpoints.custom
+# Raise LibreChat's request timeout: approvals can hold the request open for APPROVAL_TIMEOUT_MS.
+endpoints:
+  custom:
+    - name: "Airlock"
+      apiKey: "unused"
+      baseURL: "http://host.docker.internal:8787/v1"
+      models:
+        default: ["auto", "airlock/claude-sonnet-5", "local/Qwen/Qwen3.5-35B-A3B-FP8"]
+        fetch: true
+      titleConvo: true
+      titleModel: "local/Qwen/Qwen3.5-35B-A3B-FP8"
+      modelDisplayLabel: "Airlock"
+      headers:
+        x-airlock-agent: "contract-agent.agents.acme.eth"
+        # Check your LibreChat version supports body placeholders in headers; otherwise drop this line.
+        x-airlock-session: "{{LIBRECHAT_BODY_CONVERSATIONID}}"

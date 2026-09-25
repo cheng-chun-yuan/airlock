@@ -1,0 +1,18 @@
+services:
+  gateway:
+    build: { context: ., network: host }
+    ports: ["8787:8787"]
+    env_file: [{ path: .env, required: false }]
+    environment:
+      PRESIDIO_URL: http://presidio-analyzer:3000
+      # vLLM runs on the host (GB10); override if it lives elsewhere
+      LOCAL_BASE_URL: ${LOCAL_BASE_URL:-http://host.docker.internal:8000/v1}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: ["./data:/app/data"]
+    depends_on: [presidio-analyzer]
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    ports: ["5002:3000"]
+
+# LibreChat: point a custom endpoint at http://<host>:8787/v1 — see demo/librechat.yaml

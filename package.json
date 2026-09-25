@@ -1,0 +1,25 @@
+{
+  "name": "airlock",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "redactor",
+    "approval",
+    "registry",
+    "audit",
+    "gateway"
+  ],
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env gateway/src/index.ts",
+    "start": "tsx --env-file-if-exists=.env gateway/src/index.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "smoke": "bash demo/smoke.sh",
+    "test": "tsx --test \"**/src/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

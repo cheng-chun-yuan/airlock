@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Airlock Console</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<style>
+  :root { --bg:#f7f7f5; --panel:#fff; --ink:#1b1b1b; --muted:#6b6b6b; --line:#e3e3df; --ok:#1f7a4d; --bad:#b3261e; --warn:#9a6700; --accent:#3446d4; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151515; --panel:#1e1e1e; --ink:#eaeaea; --muted:#9a9a9a; --line:#333; --ok:#5cc78e; --bad:#ff7a70; --warn:#e0b44c; --accent:#8c9bff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:16px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; }
+  header h1 { font-size:16px; margin:0; }
+  nav button { background:none; border:0; padding:6px 10px; cursor:pointer; color:var(--muted); font:inherit; border-radius:6px; }
+  nav button.active { color:var(--ink); background:var(--bg); }
+  .pill { font:12px var(--mono); padding:2px 8px; border-radius:99px; border:1px solid var(--line); }
+  main { padding:20px; max-width:1200px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns: 340px 1fr; gap:16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .item { padding:10px; border-radius:8px; cursor:pointer; border:1px solid transparent; }
+  .item:hover, .item.sel { border-color:var(--line); background:var(--bg); }
+  .s-pending{color:var(--warn)} .s-approved,.s-auto,.s-valid{color:var(--ok)} .s-denied,.s-blocked,.s-expired,.s-role_invalid,.s-proof_invalid,.s-revoked{color:var(--bad)}
+  pre { white-space:pre-wrap; word-break:break-word; font:12px/1.5 var(--mono); background:var(--bg); padding:10px; border-radius:8px; margin:0; max-height:360px; overflow:auto; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+  .muted { color:var(--muted); } .mono { font-family:var(--mono); font-size:12px; word-break:break-all; }
+  button.act { padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; font:inherit; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--bad); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  table { width:100%; border-collapse:collapse; font-size:13px; } td,th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  #qr img { image-rendering:pixelated; background:#fff; padding:8px; border-radius:8px; }
+  textarea, input, select { width:100%; font:inherit; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--ink); }
+  mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color:inherit; border-radius:3px; padding:0 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡️ Airlock Console</h1>
+  <nav>
+    <button data-tab="queue" class="active">Queue</button>
+    <button data-tab="audit">Audit</button>
+    <button data-tab="chat">Test chat</button>
+  </nav>
+  <span style="flex:1"></span>
+  <span class="pill" id="mode">…</span>
+</header>
+<main>
+  <section id="tab-queue" class="grid">
+    <div class="card"><div class="muted" style="margin-bottom:8px">Requests</div><div id="list"></div></div>
+    <div class="card" id="detail"><span class="muted">Select a request.</span></div>
+  </section>
+  <section id="tab-audit" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <div><b>Hash chain</b> <span id="chain"></span></div>
+        <div class="row"><span class="mono" id="root"></span><button class="act" id="anchor">Anchor root to ENS</button></div>
+      </div>
+      <div id="anchorOut" class="mono muted"></div>
+      <table><thead><tr><th>#</th><th>time</th><th>decision</th><th>model</th><th>role</th><th>World ID</th><th>reason</th><th>hash</th></tr></thead><tbody id="auditRows"></tbody></table>
+    </div>
+  </section>
+  <section id="tab-chat" hidden>
+    <div class="card">
+      <div class="row"><select id="chatModel" style="width:auto"></select><input id="chatSession" placeholder="session id (optional)" style="width:260px" /></div>
+      <textarea id="chatIn" rows="8" style="margin-top:8px" placeholder="Paste a contract and ask for a review…"></textarea>
+      <div class="row" style="margin-top:8px"><button class="act primary" id="chatSend">Send</button><button class="act" id="chatContract">Load demo contract prompt</button><span class="muted" id="chatStatus"></span></div>
+      <pre id="chatOut" style="margin-top:12px"></pre>
+    </div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+let cfg = {}, items = [], selected = null;
+
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("active", x === b));
+  ["queue","audit","chat"].forEach((t) => $("#tab-" + t).hidden = t !== b.dataset.tab);
+  if (b.dataset.tab === "audit") loadAudit();
+});
+
+async function j(url, opts) { const r = await fetch(url, opts); return r.json(); }
+
+async function loadQueue() {
+  items = await j("/approvals");
+  $("#list").innerHTML = items.map((r) => `<div class="item ${r.id===selected?"sel":""}" data-id="${r.id}">
+      <div class="row" style="justify-content:space-between"><b class="s-${r.status}">${r.status}</b><span class="muted">${new Date(r.createdAt).toLocaleTimeString()}</span></div>
+      <div class="muted mono">${esc(r.agent)}</div><div class="muted">→ ${esc(r.targetModel)} · risk ${r.riskLevel}</div></div>`).join("") || `<span class="muted">No approval requests yet. Auto-sent and blocked requests appear in Audit.</span>`;
+  document.querySelectorAll(".item").forEach((el) => el.onclick = () => show(el.dataset.id));
+}
+
+const hl = (s) => esc(s).replace(/&lt;([A-Z_]+_\d+)&gt;/g, "<mark>&lt;$1&gt;</mark>");
+
+async function show(id) {
+  selected = id; loadQueue();
+  const r = await j("/approvals/" + id);
+  const ents = Object.entries(r.entities).map(([k,v]) => `${k}×${v}`).join(" · ") || "none";
+  $("#detail").innerHTML = `
+    <div class="row" style="justify-content:space-between"><h3 style="margin:0">Request <span class="s-${r.status}">${r.status}</span></h3><span class="muted">expires ${new Date(r.expiresAt).toLocaleTimeString()}</span></div>
+    <p class="muted">${esc(r.reason ?? "")}</p>
+    <div class="cols" style="margin:10px 0">
+      <div><div class="muted">Original (stays local)</div><pre>${esc(r.originalPreview)}</pre></div>
+      <div><div class="muted">Redacted — what ${esc(r.targetModel)} would see</div><pre>${hl(r.redactedPreview)}</pre></div>
+    </div>
+    <table>
+      <tr><td>Masked entities</td><td>${ents}</td></tr>
+      <tr><td>Residual risk</td><td class="s-${r.riskLevel==="low"?"valid":"denied"}">${r.riskLevel}${r.findings.length ? " — " + esc(r.findings.join("; ")) : ""}</td></tr>
+      <tr><td>ENS policy</td><td class="mono">${esc(r.agent)}</td></tr>
+      <tr><td>Required role</td><td class="mono">${esc(r.requiredRole)}</td></tr>
+      <tr><td>payloadHash (World ID signal)</td><td class="mono">${r.payloadHash}</td></tr>
+      <tr><td>viewHash</td><td class="mono">${r.viewHash}</td></tr>
+    </table>
+    ${r.status === "pending" ? `<div style="margin-top:14px" id="approveBox"></div>` : ""}`;
+  if (r.status === "pending") renderApprove(r);
+}
+
+function renderApprove(r) {
+  const box = $("#approveBox");
+  const deny = `<button class="act danger" id="deny">Deny</button>`;
+  if (cfg.worldIdMode === "mock") {
+    box.innerHTML = `<div class="muted" style="margin-bottom:6px">Mock World ID (set WORLD_APP_ID for the real flow)</div>
+      <div class="row">${(cfg.mockApprovers||[]).map((a) => `<button class="act primary" data-n="${a.nullifier}" data-name="${a.name}">Verify as ${a.name}</button>`).join("")} ${deny}</div>
+      <pre id="verifyOut" style="margin-top:8px" hidden></pre>`;
+    box.querySelectorAll("button[data-n]").forEach((b) => b.onclick = () => submit(r.id, { mock: true, nullifier: b.dataset.n, approverName: b.dataset.name }));
+  } else {
+    box.innerHTML = `<div class="row"><input id="approverName" placeholder="your ENS name, e.g. alice.${esc(r.requiredRole)}" style="width:360px" />
+      <button class="act primary" id="wid">Approve with World ID</button> ${deny}</div><div id="qr" style="margin-top:10px"></div><pre id="verifyOut" style="margin-top:8px" hidden></pre>`;
+    $("#wid").onclick = () => worldId(r);
+  }
+  $("#deny").onclick = async () => { await j(`/approvals/${r.id}/deny`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }); show(r.id); };
+}
+
+async function loadIDKit() {
+  if (window.IDKit) return window.IDKit;
+  await new Promise((ok, err) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@worldcoin/idkit-core@4.3.0/dist/idkit.global.js"; s.onload = ok; s.onerror = err; document.head.append(s); });
+  return window.IDKit;
+}
+
+async function worldId(r) {
+  const out = $("#verifyOut"); out.hidden = false; out.textContent = "Preparing World ID request…";
+  try {
+    const IDKit = await loadIDKit();
+    const ctx = await j(`/approvals/${r.id}/worldid`);
+    const req = await IDKit.request({ app_id: ctx.app_id, action: ctx.action, rp_context: ctx.rp_context, allow_legacy_proofs: true, environment: ctx.environment })
+      .preset(IDKit.orbLegacy({ signal: ctx.signal }));
+    const qr = qrcode(0, "M"); qr.addData(req.connectorURI); qr.make();
+    $("#qr").innerHTML = qr.createImgTag(5) + `<div class="muted">Scan with World App (staging: simulator.worldcoin.org). <a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
+    out.textContent = "Waiting for World App…";
+    const res = await req.pollUntilCompletion({ timeout: 120000 });
+    if (!res.success) { out.textContent = "World ID error: " + res.error; return; }
+    await submit(r.id, { ...res.result, approverName: $("#approverName").value.trim() });
+  } catch (e) { out.textContent = "World ID failed: " + e.message; }
+}
+
+async function submit(id, body) {
+  const out = $("#verifyOut"); out.hidden = false;
+  out.textContent = JSON.stringify(await j(`/approvals/${id}/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), null, 2);
+  setTimeout(() => show(id), 800);
+}
+
+async function loadAudit() {
+  const a = await j("/audit");
+  $("#chain").innerHTML = a.chain.ok ? `<span class="s-valid">✓ intact (${a.records.length} records)</span>` : `<span class="s-denied">✗ broken at #${a.chain.brokenAt}</span>`;
+  $("#root").innerHTML = `root ${a.merkleRoot.slice(0, 18)}…` + (a.ensLink ? ` <a href="${a.ensLink}" target="_blank">ENS ↗</a>` : "");
+  $("#auditRows").innerHTML = a.records.slice().reverse().map((r) => `<tr><td>${r.seq}</td><td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+    <td class="s-${r.decision}">${r.decision}</td><td class="mono">${esc(r.targetModel ?? "")}</td><td class="s-${r.roleCheck ?? ""}">${r.roleCheck ?? "—"}</td>
+    <td>${r.worldIdVerified ? "✓" : "—"}</td><td class="muted">${esc(r.reason ?? "")}</td><td class="mono">${r.hash.slice(0, 12)}…</td></tr>`).join("");
+}
+$("#anchor").onclick = async () => { $("#anchorOut").textContent = "anchoring…"; $("#anchorOut").textContent = JSON.stringify(await j("/audit/anchor", { method: "POST" })); loadAudit(); };
+
+$("#chatContract").onclick = () => { $("#chatIn").value = cfg.demoPrompt ?? ""; $("#chatModel").value = "airlock/" + cfg.defaultClaudeModel; };
+$("#chatSend").onclick = async () => {
+  $("#chatStatus").textContent = "waiting (approval may be pending in Queue)…"; $("#chatOut").textContent = "";
+  const headers = { "content-type": "application/json" }; if ($("#chatSession").value) headers["x-airlock-session"] = $("#chatSession").value;
+  const r = await j("/v1/chat/completions", { method: "POST", headers, body: JSON.stringify({ model: $("#chatModel").value, messages: [{ role: "user", content: $("#chatIn").value }] }) });
+  $("#chatStatus").textContent = r.airlock ? `route=${r.airlock.route} decision=${r.airlock.decision} egressed=${r.airlock.egressed}` : "";
+  $("#chatOut").textContent = r.choices?.[0]?.message?.content ?? JSON.stringify(r, null, 2);
+};
+
+(async () => {
+  cfg = await j("/config");
+  $("#mode").textContent = `World ID: ${cfg.worldIdMode} · ENS: ${cfg.ensMode}`;
+  const models = (await j("/v1/models")).data.map((m) => m.id);
+  $("#chatModel").innerHTML = models.map((m) => `<option>${m}</option>`).join("");
+  loadQueue();
+  const es = new EventSource("/events");
+  ["approval.created", "approval.resolved", "request.routed"].forEach((t) => es.addEventListener(t, () => { loadQueue(); if (selected) show(selected); if (!$("#tab-audit").hidden) loadAudit(); }));
+})();
+</script>
+</body>
+</html>
