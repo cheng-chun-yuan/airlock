@@ -225,6 +225,7 @@
     <button data-tab="queue" class="on">Queue <span class="count" id="nPending"></span></button>
     <button data-tab="ledger">Ledger</button>
     <button data-tab="try">Try it</button>
+    <button data-tab="enroll">Enroll</button>
   </nav>
   <div class="ticker" id="ticker" title="recent decisions"></div>
   <div class="live" id="live"><span class="led"></span><span id="liveTxt">offline</span></div>
@@ -248,6 +249,17 @@
     </div>
     <div class="chain" id="chain"></div>
     <div class="blkinfo" id="blkinfo"></div>
+  </section>
+
+  <section id="tab-enroll" hidden>
+    <div style="max-width:640px">
+      <p class="eyebrow">Enroll an approver</p>
+      <h2 style="font:500 22px var(--display); margin:0 0 6px">Bind a World ID to an ENS approver name</h2>
+      <p class="muted" style="margin:0 0 16px">The approver proves they're human once. The gateway stores <span class="mono">commitment(nullifier)</span>, never the nullifier, under <span class="mono">airlock.approver</span> of their name. Approvals later use the same World ID action, so the same person yields the same commitment.</p>
+      <div style="display:flex; gap:8px"><input class="field" id="enrollName" placeholder="bob.legal.approvers.acme.eth" style="flex:1" /><button class="btn dark" id="enrollGo">Enroll with World ID</button></div>
+      <div id="enrollQr" style="margin-top:14px; display:flex; gap:14px; align-items:center"></div>
+      <pre class="out" id="enrollOut" style="margin-top:12px"></pre>
+    </div>
   </section>
 
   <section id="tab-try" class="try" hidden>
@@ -283,7 +295,7 @@ let cfg = {}, items = [], selected = null, current = null, lastStatus = {}, seen
 function tab(name) {
   if (name !== "queue") history.replaceState(null, "", "#" + name); else if (selected) history.replaceState(null, "", "#" + selected);
   $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
-  ["queue", "ledger", "try"].forEach((t) => ($("#tab-" + t).hidden = t !== name));
+  ["queue", "ledger", "try", "enroll"].forEach((t) => ($("#tab-" + t).hidden = t !== name));
   if (name === "ledger") loadLedger();
 }
 $$(".tabs button").forEach((b) => (b.onclick = () => tab(b.dataset.tab)));
@@ -584,6 +596,35 @@ $("#send").onclick = async () => {
 };
 $("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#send").click(); });
 
+/* ---------- enroll ---------- */
+$("#enrollGo").onclick = async () => {
+  const name = $("#enrollName").value.trim(), out = $("#enrollOut");
+  if (!name) { out.textContent = "Enter the approver's ENS name first."; return; }
+  let proof;
+  try {
+    if (cfg.worldIdMode === "mock") {
+      const nullifier = prompt("Mock World ID: nullifier standing in for this person (hex)", "0x0b0b");
+      if (!nullifier) return;
+      proof = { mock:true, nullifier };
+    } else {
+      out.textContent = "Preparing World ID request…";
+      const IDKit = await loadIDKit();
+      const ctx = await j(`/enroll/worldid?approverName=${encodeURIComponent(name)}`);
+      const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, rp_context:ctx.rp_context, allow_legacy_proofs:true, environment:ctx.environment }).preset(IDKit.orbLegacy({ signal:ctx.signal }));
+      const qr = qrcode(0, "M"); qr.addData(req.connectorURI); qr.make();
+      $("#enrollQr").innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App${ctx.environment === "staging" ? " or paste the link into simulator.worldcoin.org" : ""}.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
+      out.textContent = "Waiting for World App…";
+      const res = await req.pollUntilCompletion({ timeout:180000 });
+      if (!res.success) { out.textContent = "World ID: " + res.error; return; }
+      proof = res.result;
+    }
+    const d = await post("/enroll", { ...proof, approverName:name });
+    $("#enrollQr").innerHTML = "";
+    out.textContent = d.error ? `✗ ${d.error}` : `✓ enrolled ${d.approverName}\ncommitment ${d.commitment}\nstored in ${cfg.ensMode.startsWith("sepolia") ? "ENS text record airlock.approver" : "data/approvers.json (static mode)"}`;
+    if (!d.error) toast("ENROLLED", d.approverName);
+  } catch (e) { out.textContent = "Enroll failed: " + e.message; }
+};
+
 /* ---------- live ---------- */
 function toast(title, body, onclick) {
   const t = document.createElement("div"); t.className = "toast"; t.innerHTML = `<b>${esc(title)}</b>${esc(body)}`;
@@ -605,7 +646,7 @@ function tick(decision) {
   newSession();
   (await j("/audit")).records.slice(-40).forEach((r) => tick(r.decision));
   const hash = location.hash.slice(1);
-  if (hash === "ledger" || hash === "try") tab(hash); else if (hash) selected = hash;
+  if (["ledger", "try", "enroll"].includes(hash)) tab(hash); else if (hash) selected = hash;
   await loadQueue();
   if (selected) show(selected);
 
