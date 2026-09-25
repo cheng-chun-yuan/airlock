@@ -462,7 +462,7 @@ async function approve(r) {
     out.textContent = "Preparing World ID request…";
     const IDKit = await loadIDKit();
     const ctx = await j(`/approvals/${r.id}/worldid`);
-    const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, rp_context:ctx.rp_context, allow_legacy_proofs:true, environment:ctx.environment }).preset(IDKit.orbLegacy({ signal:ctx.signal }));
+    const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, rp_context:ctx.rp_context, allow_legacy_proofs:!!ctx.allow_legacy_proofs, environment:ctx.environment }).preset(IDKit[ctx.preset ?? "proofOfHuman"]({ signal:ctx.signal }));
     const qr = qrcode(0, "M"); qr.addData(req.connectorURI); qr.make();
     $("#qr").innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App.<br/>The proof is bound to this exact payload.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
     out.textContent = "Waiting for World App…";
@@ -475,7 +475,7 @@ async function approve(r) {
 
 async function loadIDKit() {
   if (window.IDKit) return window.IDKit;
-  await new Promise((ok, err) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@worldcoin/idkit-core@4.3.0/dist/idkit.global.js"; s.onload = ok; s.onerror = err; document.head.append(s); });
+  await new Promise((ok, err) => { const s = document.createElement("script"); s.src = "/vendor/idkit/idkit.global.js"; s.onload = ok; s.onerror = err; document.head.append(s); });
   return window.IDKit;
 }
 
@@ -610,7 +610,7 @@ $("#enrollGo").onclick = async () => {
       out.textContent = "Preparing World ID request…";
       const IDKit = await loadIDKit();
       const ctx = await j(`/enroll/worldid?approverName=${encodeURIComponent(name)}`);
-      const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, rp_context:ctx.rp_context, allow_legacy_proofs:true, environment:ctx.environment }).preset(IDKit.orbLegacy({ signal:ctx.signal }));
+      const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, rp_context:ctx.rp_context, allow_legacy_proofs:!!ctx.allow_legacy_proofs, environment:ctx.environment }).preset(IDKit[ctx.preset ?? "proofOfHuman"]({ signal:ctx.signal }));
       const qr = qrcode(0, "M"); qr.addData(req.connectorURI); qr.make();
       $("#enrollQr").innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App${ctx.environment === "staging" ? " or paste the link into simulator.worldcoin.org" : ""}.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
       out.textContent = "Waiting for World App…";
