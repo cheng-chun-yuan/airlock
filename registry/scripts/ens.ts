@@ -1,0 +1,75 @@
+/**
+ * ENS setup / inspection for Airlock (ENSv2 on Sepolia). See docs/INTEGRATION-NOTES.md.
+ *
+ *   npm run ens -- check <agent> [approverName]    read policy, approver and audit records
+ *   npm run ens -- set-policy <agent> [file]       write airlock.* policy records (default demo/policies.json)
+ *   npm run ens -- enroll <approverName> <commitment>
+ *   npm run ens -- revoke <approverName>           clear airlock.approver (or `unregister` the subname in the ENS app)
+ *   npm run ens -- anchor <root>                   write airlock.auditRoot on ENS_AUDIT_NAME
+ *   npm run ens -- commitment <nullifier>          what enrollment would store for a nullifier
+ *
+ * Env: SEPOLIA_RPC_URL, ENS_RESOLVER + ENS_PRIVATE_KEY (writes), ENS_AUDIT_NAME, COMMITMENT_SALT, ENS_UNIVERSAL_RESOLVER.
+ */
+import { readFileSync } from "node:fs";
+import type { Hex } from "viem";
+import { commitmentOf, ensClient, EnsPolicyResolver, EnsRoleRegistry, EnsWriter } from "../src/index";
+
+const env = process.env;
+const [cmd, ...args] = process.argv.slice(2);
+const rpc = env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
+const client = ensClient(rpc, env.ENS_UNIVERSAL_RESOLVER as Hex | undefined);
+const auditName = env.ENS_AUDIT_NAME ?? "audit.acme.eth";
+const POLICY_KEYS = ["maxClass", "egress", "models", "approverRole", "ownerRole"] as const;
+
+function writer(): EnsWriter {
+  if (!env.ENS_PRIVATE_KEY || !env.ENS_RESOLVER) throw new Error("set ENS_PRIVATE_KEY and ENS_RESOLVER (your PermissionedResolver) to write");
+  return new EnsWriter(rpc, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client);
+}
+const need = (v: string | undefined, name: string) => v ?? (console.error(`missing <${name}>`), process.exit(2));
+const text = (name: string, key: string) => client.getEnsText({ name, key }).catch((e) => `error: ${(e as Error).message.split("\n")[0]}`);
+
+async function main() {
+  switch (cmd) {
+    case "check": {
+      const agent = need(args[0], "agent");
+      console.log(`rpc ${rpc}\n\n${agent}`);
+      for (const k of POLICY_KEYS) console.log(`  airlock.${k.padEnd(13)} ${(await text(agent, `airlock.${k}`)) ?? "—"}`);
+      const p = await new EnsPolicyResolver(client, 0).resolve(agent);
+      console.log(`  effective policy     ${JSON.stringify(p)}${p.egress === "block" ? "   ← fail-closed (records missing?)" : ""}`);
+      if (args[1]) {
+        console.log(`\n${args[1]}\n  airlock.approver     ${(await text(args[1], "airlock.approver")) ?? "—"}\n  airlock.expires      ${(await text(args[1], "airlock.expires")) ?? "—"}`);
+        const onchain = await text(args[1], "airlock.approver");
+        if (onchain && !onchain.startsWith("error")) console.log(`  role check           ${await new EnsRoleRegistry(client).isValidApprover(onchain, p.approverRole, args[1])} (for role ${p.approverRole})`);
+      }
+      console.log(`\n${auditName}\n  airlock.auditRoot    ${(await text(auditName, "airlock.auditRoot")) ?? "—"}`);
+      return;
+    }
+    case "set-policy": {
+      const agent = need(args[0], "agent");
+      const all = JSON.parse(readFileSync(args[1] ?? "demo/policies.json", "utf8"));
+      const p = all[agent] ?? Object.values(all)[0];
+      const w = writer();
+      for (const k of POLICY_KEYS)
+        if (p[k] !== undefined) console.log(`airlock.${k} = ${p[k]}  tx ${await w.setText(agent, `airlock.${k}`, String(p[k]))}`);
+      return;
+    }
+    case "enroll":
+      console.log(`tx ${await writer().setText(need(args[0], "approverName"), "airlock.approver", need(args[1], "commitment"))}`);
+      return;
+    case "revoke":
+      console.log(`tx ${await writer().setText(need(args[0], "approverName"), "airlock.approver", "")}`);
+      return;
+    case "anchor":
+      console.log(`tx ${await writer().setText(auditName, "airlock.auditRoot", need(args[0], "root"))}`);
+      return;
+    case "commitment":
+      console.log(commitmentOf(need(args[0], "nullifier")));
+      return;
+    default:
+      console.log(readFileSync(new URL(import.meta.url), "utf8").split("*/")[0].replace(/^\/\*\*?|^ \* ?/gm, "").trim());
+  }
+}
+main().catch((e) => {
+  console.error(`error: ${(e as Error).message}`);
+  process.exit(1);
+});

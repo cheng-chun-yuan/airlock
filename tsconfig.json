@@ -9,5 +9,5 @@
     "esModuleInterop": true,
     "types": ["node"]
   },
-  "include": ["packages/*/src", "redactor/src", "approval/src", "registry/src", "audit/src", "gateway/src"]
+  "include": ["packages/*/src", "redactor/src", "approval/src", "registry/src", "registry/scripts", "audit/src", "gateway/src"]
 }
