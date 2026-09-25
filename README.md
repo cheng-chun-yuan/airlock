@@ -29,7 +29,8 @@ cp .env.example .env        # optional: works with zero config in mock mode
 npm start                   # gateway + console on :8787
 open http://localhost:8787/console
 npm test                    # unit tests
-npm run smoke               # e2e: approve / deny / non-approver / revoked, against a running gateway
+npm run smoke               # e2e: approve / scope reuse / deny / non-approver / revoked, against a running gateway
+npm run ens -- check contract-agent.agents.acme.eth   # read ENS policy + approver + audit records
 ```
 
 With no config you get:
@@ -64,7 +65,7 @@ Any failure path (blocked, denied, expired, role invalid, egress error) falls ba
 
 ## API
 
-- `POST /v1/chat/completions`, `GET /v1/models`: OpenAI-compatible. With `stream: true`, the whole answer arrives as a single SSE chunk.
+- `POST /v1/chat/completions`, `GET /v1/models`: OpenAI-compatible, streaming included. The first stream chunk carries the `airlock` metadata.
 - `GET /approvals?status=pending`, `GET /approvals/:id`
 - `GET /approvals/:id/worldid`: IDKit request context (signed `rp_context`, `signal = payloadHash`).
 - `POST /approvals/:id/verify`: IDKit result, plus `approverName` (ENS subname).
@@ -89,23 +90,26 @@ demo/           fake contract, dictionary, policies, LibreChat snippet, smoke te
 
 ## Status
 
-**Done (P0/P1 core):**
-- Routing and redaction/rehydration, with session-stable placeholders.
-- The policy decision table.
+**Done:**
+- Routing (`local/*`, `airlock/*`, `auto`) with **real token streaming**. Checks and approval finish before the first byte. A client that hangs up cancels the upstream, and the egress is still audited.
+- Redaction and rehydration with session-stable placeholders, including placeholders split across stream chunks. Recognizers run in this order: rules → company dictionary → Presidio → local-model tagging of indirect identifiers (`REDACT_LLM=1`).
+- **Local attack test** (`ATTACK_TEST`, on by default): before anything leaves, the local model tries to guess what's behind each placeholder. It's graded against the real mapping, so a hit is a measured leak and forces high risk.
+- The policy decision table, including owner escalation for high risk.
 - The approval flow: approve, deny, timeout, role-invalid and revoked.
+- **Approval scope reuse** (`APPROVAL_SCOPE_MS`): follow-ups in the same session with no new entities and no higher risk ride on an earlier approval. The approver's ENS role is re-checked on every reuse, so a revocation also ends the scope.
 - World ID 4.0 verification: RP signing, signal binding, replay guard.
-- ENS reads, verified live on Sepolia; ENS writes.
-- Hash-chain audit and a Merkle root, with per-request attribution (agent + egress token usage).
+- ENS: reads verified live on Sepolia; an `npm run ens` CLI for check / set-policy / enroll / revoke / anchor.
+- Hash-chain audit and a Merkle root, with per-request attribution (agent, token usage, `scopeOf`).
 - Pluggable egress: Anthropic directly, or a self-configured OpenAI-compatible upstream. The ENS model allow-list is still enforced.
-- The Console.
-- Docker image.
+- The Console: airlock chamber, hold-to-approve, linked redaction view, hash-chain ledger, and a streamed "Try it" conversation.
+- An agent skill ([skills/airlock/SKILL.md](skills/airlock/SKILL.md)) and a Docker image.
 
-**Not yet:**
-- An end-to-end run with a real World ID staging app.
-- On-chain ENS writes. The code follows the ENSv2 `PermissionedResolver` ABI but hasn't been run against the chain yet.
-- Local-model indirect-identifier tagging and a local attack test (P2).
-- Approval scope reuse (P2).
-- Real token streaming.
-- A Next.js Console. The current Console is a single HTML page.
+**Needs your credentials (code is ready, not yet run for real):**
+- **World ID:** an end-to-end run with a real staging app. Set `WORLD_APP_ID`, `WORLD_RP_ID` and `WORLD_RP_SIGNING_KEY`, then test with simulator.worldcoin.org.
+- **ENS:** on-chain writes. Register a name on app.ens.dev (Sepolia), deploy or point to a PermissionedResolver, set `ENS_PRIVATE_KEY` and `ENS_RESOLVER`, then run `npm run ens -- set-policy …`.
+
+**Deliberately not done:**
+- **Next.js Console:** the single HTML page is served by the gateway with no build step. That keeps the trust boundary to one process.
+- **Streaming tool-call deltas:** requests with `tools` use the buffered path.
 
 See [docs/INTEGRATION-NOTES.md](docs/INTEGRATION-NOTES.md) for the ENS setup checklist.
