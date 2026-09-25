@@ -3,11 +3,11 @@ import { decide, hashOf, type ChatMessage, type Decision, type PolicyResolver, t
 import { newSession, rehydrateMessage, type PipelineRedactor } from "@airlock/redactor";
 import type { ApprovalStore } from "@airlock/approval";
 import type { JsonlAuditLog } from "@airlock/audit";
-import type { ClaudeModel, Completion, LocalModel } from "./llm";
+import type { Completion, FrontierModel, LocalModel } from "./llm";
 
 export interface Deps {
   local: LocalModel;
-  claude: ClaudeModel;
+  egress: FrontierModel;
   redactor: PipelineRedactor;
   risk: RiskScorer;
   policies: PolicyResolver;
@@ -97,6 +97,7 @@ export class Pipeline {
         roleCheck: extra.roleCheck,
         worldIdVerified: extra.worldIdVerified ?? false,
         targetModel,
+        agent: policy.agent,
       });
       const local = await d.local.complete(messages);
       local.message.content = `> ⚠️ Airlock: not sent to ${targetModel} — ${reason}. Answered by local model.\n\n${local.message.content ?? ""}`;
@@ -141,7 +142,7 @@ export class Pipeline {
     // Egress
     let completion: Completion;
     try {
-      completion = await d.claude.complete(targetModel, red.payload);
+      completion = await d.egress.complete(targetModel, red.payload);
     } catch (e) {
       return fallback("blocked", `egress failed: ${(e as Error).message.slice(0, 200)}`, decision ?? {}, viewHash);
     }
@@ -158,6 +159,8 @@ export class Pipeline {
       roleCheck: decision?.roleCheck,
       worldIdVerified: decision?.worldIdVerified ?? false,
       targetModel,
+      agent: policy.agent,
+      usage: completion.usage && { promptTokens: completion.usage.prompt_tokens, completionTokens: completion.usage.completion_tokens },
     });
     return { completion, airlock: { ...meta, decision: route.kind === "auto" ? "auto" : "approved", egressed: true } };
   }

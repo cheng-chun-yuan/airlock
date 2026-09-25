@@ -7,7 +7,7 @@ import { dictionaryRecognizer, PipelineRedactor, presidioRecognizer, ruleRecogni
 import { ApprovalStore, MockVerifier, WorldIdVerifier, type ProofVerifier } from "@airlock/approval";
 import { ensClient, EnsPolicyResolver, EnsRoleRegistry, EnsWriter, StaticPolicyResolver, StaticRoleRegistry } from "@airlock/registry";
 import { JsonlAuditLog } from "@airlock/audit";
-import { ClaudeModel, LocalModel } from "./llm";
+import { ClaudeModel, LocalModel, OpenAICompatModel, type FrontierModel } from "./llm";
 import { Pipeline } from "./pipeline";
 import { buildApp } from "./app";
 
@@ -16,7 +16,12 @@ const root = resolve(import.meta.dirname, "../..");
 const path = (p: string) => resolve(root, p);
 
 const local = new LocalModel(env.LOCAL_BASE_URL ?? "http://localhost:8000/v1", env.LOCAL_MODEL ?? "Qwen/Qwen3.5-35B-A3B-FP8", env.LOCAL_THINKING !== "1");
-const claude = new ClaudeModel(env.ANTHROPIC_API_KEY);
+// Egress: Anthropic directly, an Anthropic-compatible gateway, or any OpenAI-compatible
+// token gateway (e.g. ATP, one key for many providers). See docs/TOKEN-GATEWAYS.md.
+const egress: FrontierModel =
+  env.EGRESS_PROVIDER === "openai"
+    ? new OpenAICompatModel(env.EGRESS_API_KEY, env.EGRESS_BASE_URL ?? "https://api.atptoken.ai/v1")
+    : new ClaudeModel(env.EGRESS_API_KEY ?? env.ANTHROPIC_API_KEY, env.EGRESS_BASE_URL ?? "https://api.anthropic.com");
 const defaultClaudeModel = env.CLAUDE_MODEL ?? "claude-sonnet-5";
 
 // Redactor: rules → company dictionary → Presidio (optional sidecar)
@@ -61,7 +66,7 @@ const approvals = new ApprovalStore(approvalTimeoutMs);
 
 const pipeline = new Pipeline({
   local,
-  claude,
+  egress,
   redactor,
   risk: new RuleRiskScorer(),
   policies,
@@ -87,7 +92,7 @@ const app = buildApp({
     worldIdMode: verifier.mode,
     ensMode,
     defaultClaudeModel,
-    claudeConfigured: claude.configured,
+    egress: egress.configured ? egress.name : null,
     // Mock people for local dev only; their commitments are pre-enrolled in data/approvers.json.
     mockApprovers: verifier.mode === "mock" ? [{ name: "alice.legal.approvers.acme.eth", nullifier: "0x0a11ce" }, { name: "mallory.legal.approvers.acme.eth", nullifier: "0x0bad" }] : [],
     demoPrompt: `Review this contract and list the three riskiest clauses for us as Provider:\n\n${readFileSync(path("demo/contract.md"), "utf8")}`,
@@ -99,6 +104,6 @@ if (env.AUDIT_ANCHOR_INTERVAL_MS && writer)
 
 const port = Number(env.PORT ?? 8787);
 serve({ fetch: app.fetch, port, hostname: env.HOST ?? "0.0.0.0" }, () => {
-  console.log(`airlock gateway on :${port}  local=${local.model}  claude=${claude.configured ? defaultClaudeModel : "NOT CONFIGURED"}  worldid=${verifier.mode}  ens=${ensMode}`);
+  console.log(`airlock gateway on :${port}  local=${local.model}  egress=${egress.configured ? `${egress.name} → ${defaultClaudeModel}` : "NOT CONFIGURED"}  worldid=${verifier.mode}  ens=${ensMode}`);
   console.log(`console → http://localhost:${port}/console`);
 });

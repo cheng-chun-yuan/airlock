@@ -99,6 +99,9 @@ export interface AuditRecord {
   roleCheck?: RoleCheck;
   worldIdVerified: boolean;
   targetModel?: string;
+  /** Attribution: which agent policy the request ran under, and what egress cost in tokens. */
+  agent?: string;
+  usage?: { promptTokens: number; completionTokens: number };
   timestamp: number;
   hash: string;
   gatewaySig: string;
