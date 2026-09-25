@@ -40,13 +40,27 @@ export function buildApp(d: AppDeps) {
     const { model = "auto", messages, stream, ...rest } = body as { model?: string; messages: ChatMessage[]; stream?: boolean };
     const extra: Record<string, unknown> = {};
     for (const k of ["temperature", "top_p", "max_tokens", "tools", "tool_choice", "stop"]) if (k in rest) extra[k] = (rest as any)[k];
-    const { completion, airlock } = await d.pipeline.handle(model, messages, {
-      sessionId: c.req.header("x-airlock-session") ?? undefined,
-      agent: c.req.header("x-airlock-agent") ?? undefined,
-      extra,
-    });
-    const id = `chatcmpl-${airlock.requestId}`;
+    const opts = { sessionId: c.req.header("x-airlock-session") ?? undefined, agent: c.req.header("x-airlock-agent") ?? undefined, extra };
     const created = Math.floor(Date.now() / 1000);
+
+    // Real token streaming. Requests with tools use the buffered path below (tool-call deltas aren't streamed yet).
+    if (stream && !extra.tools) {
+      const { model: served, airlock, chunks } = await d.pipeline.stream(model, messages, opts);
+      const base = { id: `chatcmpl-${airlock.requestId}`, object: "chat.completion.chunk", created, model: served };
+      c.header("x-airlock-route", airlock.route);
+      c.header("x-airlock-decision", airlock.decision);
+      return streamSSE(c, async (s) => {
+        await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }], airlock }) });
+        for await (const ch of chunks) {
+          if (ch.text) await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: ch.text }, finish_reason: null }] }) });
+          if (ch.finishReason) await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: ch.finishReason }], ...(ch.usage && { usage: ch.usage }) }) });
+        }
+        await s.writeSSE({ data: "[DONE]" });
+      });
+    }
+
+    const { completion, airlock } = await d.pipeline.handle(model, messages, opts);
+    const id = `chatcmpl-${airlock.requestId}`;
     c.header("x-airlock-route", airlock.route);
     c.header("x-airlock-decision", airlock.decision);
     if (!stream)
@@ -59,7 +73,6 @@ export function buildApp(d: AppDeps) {
         usage: completion.usage,
         airlock,
       });
-    // Streaming is on the cut list: emit the finished answer as one SSE chunk so streaming clients still work.
     return streamSSE(c, async (s) => {
       const base = { id, object: "chat.completion.chunk", created, model: completion.model };
       await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: completion.message.content ?? "", ...(completion.message.tool_calls && { tool_calls: completion.message.tool_calls.map((t, index) => ({ index, ...t })) }) }, finish_reason: null }] }) });

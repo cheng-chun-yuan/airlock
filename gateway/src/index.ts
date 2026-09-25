@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import type { Hex } from "viem";
 import type { PolicyResolver, RoleRegistry } from "@airlock/core";
-import { dictionaryRecognizer, PipelineRedactor, presidioRecognizer, ruleRecognizer, RuleRiskScorer, type Recognizer } from "@airlock/redactor";
+import { dictionaryRecognizer, llmRecognizer, LocalAttackScorer, PipelineRedactor, presidioRecognizer, ruleRecognizer, RuleRiskScorer, type Recognizer } from "@airlock/redactor";
 import { ApprovalStore, MockVerifier, WorldIdVerifier, type ProofVerifier } from "@airlock/approval";
 import { ensClient, EnsPolicyResolver, EnsRoleRegistry, EnsWriter, StaticPolicyResolver, StaticRoleRegistry } from "@airlock/registry";
 import { JsonlAuditLog } from "@airlock/audit";
@@ -28,6 +28,9 @@ const defaultClaudeModel = env.CLAUDE_MODEL ?? "claude-sonnet-5";
 // Redactor: rules → company dictionary → Presidio (optional sidecar)
 const recognizers: Recognizer[] = [ruleRecognizer, dictionaryRecognizer(JSON.parse(readFileSync(path(env.DICTIONARY_FILE ?? "demo/dictionary.json"), "utf8")))];
 if (env.PRESIDIO_URL) recognizers.push(presidioRecognizer(env.PRESIDIO_URL, env.PRESIDIO_LANGUAGE ?? "en"));
+// Step 3: the local model tags indirect identifiers (opt-in: adds a local-model call per new message)
+const ask = (system: string, user: string) => local.ask(system, user);
+if (env.REDACT_LLM === "1") recognizers.push(llmRecognizer(ask));
 const redactor = new PipelineRedactor(recognizers, (r, e) => console.warn(`[redactor] ${r} failed: ${(e as Error).message}`));
 
 // Policy + roles: ENS (Sepolia) when SEPOLIA_RPC_URL is set, else local JSON
@@ -69,13 +72,15 @@ const pipeline = new Pipeline({
   local,
   egress,
   redactor,
-  risk: new RuleRiskScorer(),
+  // Local attack test (on by default): the local model tries to re-identify placeholders before anything leaves.
+  risk: env.ATTACK_TEST === "0" ? new RuleRiskScorer() : new LocalAttackScorer(ask, new RuleRiskScorer(), (e) => console.warn(`[risk] attack test failed: ${(e as Error).message}`)),
   policies,
   approvals,
   audit,
   defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
   defaultClaudeModel,
   approvalTimeoutMs,
+  approvalScopeMs: Number(env.APPROVAL_SCOPE_MS ?? 600_000),
 });
 
 const app = buildApp({
