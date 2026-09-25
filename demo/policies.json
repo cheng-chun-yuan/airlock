@@ -2,14 +2,14 @@
   "contract-agent.agents.acme.eth": {
     "maxClass": "confidential",
     "egress": "approval",
-    "models": "claude-*",
+    "models": "gpt-*,claude-*",
     "approverRole": "legal.approvers.acme.eth",
     "ownerRole": "owners.acme.eth"
   },
   "public-agent.agents.acme.eth": {
     "maxClass": "internal",
     "egress": "auto",
-    "models": "claude-*",
+    "models": "gpt-*,claude-*",
     "approverRole": ""
   }
 }

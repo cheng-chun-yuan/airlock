@@ -108,7 +108,7 @@ demo/           fake contract, dictionary, policies, LibreChat snippet, smoke te
 - **World ID 4.0** (staging, via the World ID simulator): real proofs for enrollment and approval, with the same nullifier on both, so the role check holds.
 - **ENSv2 on Sepolia:** `airlock.eth` with its policy, approver and audit records. Revoking by unregistering the subname → the next approval is `revoked`. Re-enrollment re-creates the subname. The audit root is anchored to `audit.airlock.eth`. See [docs/SETUP.md](docs/SETUP.md).
 
-**Still needs a key:** `ANTHROPIC_API_KEY` for Claude egress. Without it, approved requests fall back to the local model.
+- **Egress via codex-lb** (OpenAI-compatible, local, `gpt-5.6-sol`): confidential text is redacted → approved with World ID + ENS role → sent to codex-lb → rehydrated locally, with 0 placeholders left and token usage audited. `ANTHROPIC_API_KEY` is optional.
 
 **Deliberately not done:**
 - **Next.js Console:** the single HTML page is served by the gateway with no build step. That keeps the trust boundary to one process.
