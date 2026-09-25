@@ -50,9 +50,9 @@ export interface FrontierModel {
 const ANTHROPIC = "https://api.anthropic.com";
 
 /**
- * Anthropic Messages API. `baseUrl` can point at an Anthropic-compatible
- * token gateway (e.g. ATP: https://api.atptoken.ai) — those take the key as a
- * Bearer token, so we send both headers when not talking to Anthropic directly.
+ * Anthropic Messages API. `baseUrl` can point at a self-hosted
+ * Anthropic-compatible proxy; those usually take the key as a Bearer token,
+ * so we send both headers when not talking to Anthropic directly.
  */
 export class ClaudeModel implements FrontierModel {
   readonly name: string;
@@ -114,10 +114,9 @@ export class ClaudeModel implements FrontierModel {
 }
 
 /**
- * Any OpenAI-compatible upstream: a multi-provider token gateway such as ATP
- * (https://api.atptoken.ai/v1, one `atp-` key for Claude / GPT / Gemini / …),
- * OpenRouter, or LiteLLM. Which models may be used is still decided by the
- * ENS policy (`airlock.models`), not by the upstream.
+ * Any OpenAI-compatible upstream you configure (e.g. a self-hosted LiteLLM
+ * or vLLM). Which models may be used is still decided by the ENS policy
+ * (`airlock.models`), not by the upstream.
  */
 export class OpenAICompatModel implements FrontierModel {
   readonly name: string;

@@ -12,15 +12,16 @@ import { Pipeline } from "./pipeline";
 import { buildApp } from "./app";
 
 const env = process.env;
+const requireEnv = (k: string) => env[k] ?? (console.error(`${k} is required`), process.exit(1));
 const root = resolve(import.meta.dirname, "../..");
 const path = (p: string) => resolve(root, p);
 
 const local = new LocalModel(env.LOCAL_BASE_URL ?? "http://localhost:8000/v1", env.LOCAL_MODEL ?? "Qwen/Qwen3.5-35B-A3B-FP8", env.LOCAL_THINKING !== "1");
-// Egress: Anthropic directly, an Anthropic-compatible gateway, or any OpenAI-compatible
-// token gateway (e.g. ATP, one key for many providers). See docs/TOKEN-GATEWAYS.md.
+// Egress: Anthropic directly, or a self-configured OpenAI-compatible upstream
+// (e.g. your own LiteLLM / vLLM). No third-party gateway is used by default.
 const egress: FrontierModel =
   env.EGRESS_PROVIDER === "openai"
-    ? new OpenAICompatModel(env.EGRESS_API_KEY, env.EGRESS_BASE_URL ?? "https://api.atptoken.ai/v1")
+    ? new OpenAICompatModel(env.EGRESS_API_KEY, requireEnv("EGRESS_BASE_URL"))
     : new ClaudeModel(env.EGRESS_API_KEY ?? env.ANTHROPIC_API_KEY, env.EGRESS_BASE_URL ?? "https://api.anthropic.com");
 const defaultClaudeModel = env.CLAUDE_MODEL ?? "claude-sonnet-5";
 

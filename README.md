@@ -12,7 +12,7 @@ Airlock is an OpenAI-compatible gateway that sits between your chat clients (Lib
 - **Real names restored locally.** Answers are rehydrated on the gateway, so the mapping table never leaves it.
 - **Everything is audited.** Every decision lands in a hash-chained log, and the log's Merkle root is anchored to ENS.
 
-Architecture (中文): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). How Airlock relates to AI token gateways like [ATP](https://atptoken.ai/zh-tw/), and how to chain them: [docs/TOKEN-GATEWAYS.md](docs/TOKEN-GATEWAYS.md). Verified integration details for World ID 4.0 and ENSv2 on Sepolia: [docs/INTEGRATION-NOTES.md](docs/INTEGRATION-NOTES.md).
+Architecture (中文): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Design references (e.g. ideas borrowed from AI token gateways such as [ATP](https://atptoken.ai/zh-tw/); reference only, no service used): [docs/REFERENCES.md](docs/REFERENCES.md). Verified integration details for World ID 4.0 and ENSv2 on Sepolia: [docs/INTEGRATION-NOTES.md](docs/INTEGRATION-NOTES.md).
 
 ```
 client ──▶ Router ─▶ Redactor ─▶ RiskScorer ─▶ PolicyResolver(ENS) ─▶ Approver(World ID + ENS role)
@@ -42,7 +42,7 @@ To turn on the real integrations, set these in `.env`:
 | Feature | Env |
 |---|---|
 | Claude egress | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` |
-| Egress via a token gateway (ATP, OpenRouter, LiteLLM; one key, many providers) | `EGRESS_PROVIDER=openai`, `EGRESS_BASE_URL`, `EGRESS_API_KEY` |
+| Self-configured OpenAI-compatible egress (e.g. your own LiteLLM) | `EGRESS_PROVIDER=openai`, `EGRESS_BASE_URL`, `EGRESS_API_KEY` |
 | Real World ID (staging works with simulator.worldcoin.org) | `WORLD_APP_ID`, `WORLD_RP_ID`, `WORLD_RP_SIGNING_KEY`, `WORLD_ENV` |
 | ENS policies and roles (read) | `SEPOLIA_RPC_URL` |
 | ENS enroll, revoke and audit anchoring (write) | `ENS_RESOLVER`, `ENS_PRIVATE_KEY`, `ENS_AUDIT_NAME` |
@@ -96,7 +96,7 @@ demo/           fake contract, dictionary, policies, LibreChat snippet, smoke te
 - World ID 4.0 verification: RP signing, signal binding, replay guard.
 - ENS reads, verified live on Sepolia; ENS writes.
 - Hash-chain audit and a Merkle root, with per-request attribution (agent + egress token usage).
-- Pluggable egress: Anthropic directly, or any Anthropic/OpenAI-compatible token gateway (e.g. ATP). The ENS model allow-list is still enforced.
+- Pluggable egress: Anthropic directly, or a self-configured OpenAI-compatible upstream. The ENS model allow-list is still enforced.
 - The Console.
 - Docker image.
 
