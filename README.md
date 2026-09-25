@@ -98,15 +98,17 @@ demo/           fake contract, dictionary, policies, LibreChat snippet, smoke te
 - The approval flow: approve, deny, timeout, role-invalid and revoked.
 - **Approval scope reuse** (`APPROVAL_SCOPE_MS`): follow-ups in the same session with no new entities and no higher risk ride on an earlier approval. The approver's ENS role is re-checked on every reuse, so a revocation also ends the scope.
 - World ID 4.0 verification: RP signing, signal binding, replay guard.
-- ENS: reads verified live on Sepolia; an `npm run ens` CLI for check / set-policy / enroll / revoke / anchor.
+- ENS: `npm run ens:setup` builds the whole name tree on ENSv2 Sepolia; `npm run ens` does check / set-policy / enroll / revoke / anchor.
 - Hash-chain audit and a Merkle root, with per-request attribution (agent, token usage, `scopeOf`).
 - Pluggable egress: Anthropic directly, or a self-configured OpenAI-compatible upstream. The ENS model allow-list is still enforced.
 - The Console: airlock chamber, hold-to-approve, linked redaction view, hash-chain ledger, and a streamed "Try it" conversation.
 - An agent skill ([skills/airlock/SKILL.md](skills/airlock/SKILL.md)) and a Docker image.
 
-**Needs your credentials (code is ready, not yet run for real):**
-- **World ID:** an end-to-end run with a real staging app. Set `WORLD_APP_ID`, `WORLD_RP_ID` and `WORLD_RP_SIGNING_KEY`, then test with simulator.worldcoin.org.
-- **ENS:** on-chain writes. Register a name on app.ens.dev (Sepolia), deploy or point to a PermissionedResolver, set `ENS_PRIVATE_KEY` and `ENS_RESOLVER`, then run `npm run ens -- set-policy …`.
+**Live and verified end to end (2026-09-26):**
+- **World ID 4.0** (staging, via the World ID simulator): real proofs for enrollment and approval, with the same nullifier on both, so the role check holds.
+- **ENSv2 on Sepolia:** `airlock.eth` with its policy, approver and audit records. Revoking by unregistering the subname → the next approval is `revoked`. Re-enrollment re-creates the subname. The audit root is anchored to `audit.airlock.eth`. See [docs/SETUP.md](docs/SETUP.md).
+
+**Still needs a key:** `ANTHROPIC_API_KEY` for Claude egress. Without it, approved requests fall back to the local model.
 
 **Deliberately not done:**
 - **Next.js Console:** the single HTML page is served by the gateway with no build step. That keeps the trust boundary to one process.

@@ -46,20 +46,36 @@ claude mcp add worldcoin-developer-portal https://developer.world.org/api/mcp --
 
 ## 2. ENS v2 on Sepolia
 
-1. **Register a name.** Register your name at <https://app.ens.dev> (Sepolia, ENSv2). v2 registration pays in test ERC-20 (mint MockUSDC in the app); gas is Sepolia ETH.
-2. **Create subnames.** Create `agents.<you>.eth`, `contract-agent.agents.<you>.eth`, `legal.approvers.<you>.eth`, `alice.legal.approvers.<you>.eth` and `audit.<you>.eth`.
-3. **Set the resolver.** Point these names at a **PermissionedResolver** you control. Grant `ROLE_SET_TEXT` to the gateway address (`ENS_ADDRESS`) for the keys it writes (`airlock.approver` and `airlock.auditRoot`). Grants are per exact key, with no wildcards. Details are in [INTEGRATION-NOTES.md](INTEGRATION-NOTES.md).
-4. **Configure `.env`:**
+**Live:** `airlock.eth` was set up on 2026-09-26 with the script below, and verified end to end. World ID proofs (simulator) + ENS role reads, on-chain revocation (unregister) → `revoked`, re-enrollment, and the audit root anchored to `audit.airlock.eth` (it matches the gateway's Merkle root).
+
+```bash
+npm run ens:setup -- airlock alice      # <name> <first approver label> [commitment]
+```
+
+The script is resumable; progress is kept in `data/ens-deploy.json`. It does the following:
+1. **Deploys** a PermissionedResolver and four UserRegistry proxies through ENS's VerifiableFactory.
+2. **Registers** `airlock.eth`: mints MockUSDC for the ~8 USDC/year fee, then commit → wait 60s → register.
+3. **Creates the subnames:**
    ```
-   SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
-   ENS_RESOLVER=0x...          # your PermissionedResolver
-   ENS_AUDIT_NAME=audit.<you>.eth
-   DEFAULT_AGENT=contract-agent.agents.<you>.eth
+   airlock.eth                               registry, no resolver
+   ├─ agents.airlock.eth                     registry, no resolver
+   │   └─ contract-agent.agents.airlock.eth  resolver: airlock.maxClass / egress / models / approverRole / ownerRole
+   ├─ approvers.airlock.eth                  registry, no resolver
+   │   └─ legal.approvers.airlock.eth        registry, no resolver   ← approver role
+   │       └─ alice.legal.approvers…         resolver: airlock.approver = commitment (180-day expiry)
+   └─ audit.airlock.eth                      resolver: airlock.auditRoot
    ```
-5. **Write the policy records.** Rename the key in `demo/policies.json` to your agent name, then run:
-   ```bash
-   npm run ens -- set-policy contract-agent.agents.<you>.eth
-   npm run ens -- check contract-agent.agents.<you>.eth alice.legal.approvers.<you>.eth
-   ```
-6. **Restart.** Policies and roles now come from ENS. Enrollment writes `airlock.approver` on-chain, and **Ledger → Anchor root to ENS** writes `airlock.auditRoot`.
-7. **Revocation demo.** Unregister alice's subname in the ENS app, or run `npm run ens -- revoke alice.legal.approvers.<you>.eth`. Her next World ID approval passes the human check but fails the role check.
+4. **Writes** the policy records and alice's commitment (from `data/approvers.json`, or the third argument).
+5. **Prints** the `.env` lines: `SEPOLIA_RPC_URL`, `ENS_RESOLVER`, `ENS_APPROVER_REGISTRY`, `ENS_AUDIT_NAME`, `DEFAULT_AGENT`.
+
+**Why only leaves have resolvers:** the PermissionedResolver stores records by full name and answers wildcard (ENSIP-10) lookups. If a parent such as `legal.approvers.airlock.eth` had it as its resolver, an **unregistered** `alice` would fall back to the parent's resolver and still resolve her old commitment, so revocation would silently fail. With no resolvers on parents, an unregistered approver resolves to nothing. Tested on-chain: unregister alone → text `null` → role `revoked`.
+
+**Day to day:**
+```bash
+npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth
+npm run ens -- enroll bob.legal.approvers.airlock.eth <commitment>   # creates the subname if needed
+npm run ens -- revoke alice.legal.approvers.airlock.eth               # unregister + clear record
+```
+In the Console, **Enroll** creates the subname and writes the commitment, and **Ledger → Anchor root to ENS** writes `airlock.auditRoot`.
+
+**Contract addresses** (ENSv2 Sepolia deployment of 2026-09-15; override with env if ENS redeploys): ETHRegistrar `0xabe7…94ca`, VerifiableFactory `0x9e72…841c`, UserRegistryImpl `0xa803…0263`, PermissionedResolverImpl `0x14f0…f243`, MockUSDC `0x16f9…aa8e`. The universal resolver is viem's default `0xeeee…eeee`.

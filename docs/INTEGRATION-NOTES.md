@@ -41,7 +41,12 @@
 - **讀取不需要特別設定。** `getEnsAddress("nick.eth")` 從這個 repo 的 `ensClient()` 實測成功。
 - **Fail-closed**：讀不到政策 record 時，`EnsPolicyResolver` 會回傳 `egress=block`（已實測）。
 
-### 寫入與權限（來自原始碼，⚠️ 尚未上鏈實測）
+### 上鏈實測（2026-09-26）
+- `airlock.eth` 用 `npm run ens:setup` 建立：部署 resolver 和 registry proxy、MockUSDC 付款、commit-reveal 註冊、建立 6 個 subname、multicall 寫入 records，一次跑完沒有失敗。
+- 讀取、撤銷（unregister）、重新 enroll、audit root 錨定都已實測，細節見 [SETUP.md](SETUP.md) §2。
+- **陷阱：** PermissionedResolver 支援 wildcard 查詢，而且 records 是依完整名稱儲存。如果父名稱也設了這個 resolver，child 被 unregister 後查詢會退到父名稱的 resolver，仍然回傳舊的 commitment，撤銷就會失效。解法：只有葉節點設 resolver。
+
+### 寫入與權限（來自原始碼）
 - **Text record** 寫在 **PermissionedResolver**：`setText(bytes dnsEncodedName, string key, string value)`。注意是 DNS 編碼的名稱，不是 namehash。實作在 `registry/src/ens.ts` 的 `EnsWriter`，用 viem 的 `packetToBytes`。
 - **§12-2 的答案：EAC 可以依 record key 授權**，但**沒有前綴萬用字元**。
   - `setText` 檢查的是 `ROLE_SET_TEXT`（1<<4），resource 是 `keccak256(key)`。
