@@ -73,6 +73,8 @@ export interface ApprovalRequest {
   reason?: string;
   /** Original text, local-only: shown side-by-side in the Console, never audited or sent out. */
   originalPreview?: string;
+  /** Placeholder -> real value, local-only: lets the Console link redacted chips to the original text. */
+  mapping?: Record<string, string>;
 }
 
 export interface Decision {

@@ -44,6 +44,12 @@ const UNSURE = /\b(?:I (?:don't|do not) know|I'm not sure|I am not sure|cannot a
 export class Pipeline {
   constructor(private d: Deps) {}
 
+  private record(draft: Parameters<JsonlAuditLog["append"]>[0]) {
+    const r = this.d.audit.append(draft);
+    this.d.approvals.emitEvent({ type: "audit.appended", seq: r.seq, decision: r.decision });
+    return r;
+  }
+
   /** Router: dispatch on the `model` field. */
   async handle(model: string, messages: ChatMessage[], opts: { sessionId?: string; agent?: string; extra?: Record<string, unknown> }): Promise<Result> {
     const sessionId = opts.sessionId ?? randomUUID();
@@ -86,7 +92,7 @@ export class Pipeline {
     d.approvals.emitEvent({ type: "request.routed", requestId, route: route.kind, reason: route.kind === "block" ? route.reason : undefined });
 
     const fallback = async (decision: "denied" | "expired" | "blocked", reason: string, extra: Partial<Decision> = {}, viewHash?: string) => {
-      d.audit.append({
+      this.record({
         requestId,
         decision,
         reason,
@@ -120,6 +126,7 @@ export class Pipeline {
         viewHash,
         redactedPreview,
         originalPreview: messages.map((m) => `[${m.role}] ${m.content ?? ""}`).join("\n\n"),
+        mapping: red.mapping,
         entities: red.entities,
         riskLevel: risk.level,
         findings: risk.findings,
@@ -149,7 +156,7 @@ export class Pipeline {
     // Rehydrator
     completion.message = rehydrateMessage(completion.message, session);
 
-    d.audit.append({
+    this.record({
       requestId,
       decision: route.kind === "auto" ? "auto" : "approved",
       sourceHash,

@@ -58,6 +58,6 @@ export class ApprovalStore extends EventEmitter implements Approver {
 
 /** Events go to the Console only (local), but keep the original text out of the broadcast anyway. */
 export function publicView(r: ApprovalRequest): ApprovalRequest {
-  const { originalPreview, ...rest } = r;
+  const { originalPreview, mapping, ...rest } = r;
   return rest as ApprovalRequest;
 }
