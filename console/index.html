@@ -192,7 +192,13 @@
   .trace { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
   .trace span { font:500 11px var(--mono); border:1px solid var(--hairline); border-radius:4px; padding:2px 7px; color:var(--umber); }
   .answer { border:1px solid var(--hairline); border-radius:12px; padding:16px; min-height:260px; white-space:pre-wrap; font-size:14.5px; background:var(--haze); }
-  .answer.wait { color:var(--umber); font:13px var(--mono); }
+  .answer { display:flex; flex-direction:column; gap:12px; max-height:620px; overflow:auto; white-space:normal; }
+  .turn { white-space:pre-wrap; line-height:1.6; }
+  .turn.user { align-self:flex-end; max-width:85%; background:var(--ink); color:var(--canvas); border-radius:12px 12px 2px 12px; padding:8px 12px; font-size:14px; max-height:140px; overflow:hidden; }
+  .turn.bot { border-left:2px solid var(--hairline); padding-left:12px; }
+  .turn.bot.streaming::after { content:"▍"; color:var(--ember); animation:blink 1s steps(2) infinite; }
+  .turn .who { display:block; font:500 10.5px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); margin-bottom:4px; }
+  @keyframes blink { 50% { opacity:0; } }
 
   /* ---------- toast ---------- */
   .toasts { position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:8px; z-index:20; }
@@ -248,14 +254,14 @@
     <div>
       <p class="eyebrow">Send something through</p>
       <div class="presets" id="presets"></div>
-      <div style="display:flex; gap:8px; margin-bottom:8px"><select class="field" id="model" style="flex:1"></select><input class="field" id="session" placeholder="session (optional)" style="flex:1" /></div>
+      <div style="display:flex; gap:8px; margin-bottom:8px"><select class="field" id="model" style="flex:1"></select><input class="field" id="session" title="x-airlock-session: placeholders and approvals are scoped to it" style="flex:1" /></div>
       <textarea class="field" id="prompt" placeholder="Ask anything. Confidential text will be held at the door."></textarea>
-      <div style="margin-top:10px; display:flex; gap:8px; align-items:center"><button class="btn dark" id="send">Send</button><span class="muted mono" id="sendState" style="font-size:12px"></span></div>
+      <div style="margin-top:10px; display:flex; gap:8px; align-items:center"><button class="btn dark" id="send">Send</button><button class="btn" id="newConvo">New conversation</button><span class="muted mono" id="sendState" style="font-size:12px"></span></div>
     </div>
     <div>
-      <p class="eyebrow">What came back</p>
+      <p class="eyebrow">Conversation · streamed</p>
       <div class="trace" id="trace"></div>
-      <div class="answer wait" id="answer">Nothing yet.</div>
+      <div class="answer" id="answer"><div class="muted mono" style="font-size:13px">Nothing yet. Follow-ups in the same session reuse an approval as long as no new sensitive entity shows up.</div></div>
     </div>
   </section>
 </main>
@@ -503,7 +509,7 @@ function pick(seq) {
   const f = (k, v) => v === undefined || v === null || v === "" ? "" : `<div class="fact"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`;
   $("#blkinfo").innerHTML = f("decision", r.decision) + f("reason", r.reason) + f("time", new Date(r.timestamp).toLocaleString()) + f("agent", r.agent) + f("model", r.targetModel)
     + f("World ID", r.worldIdVerified ? "verified human" : "—") + f("role check", r.roleCheck) + f("approver commitment", r.approverCommitment)
-    + f("tokens", r.usage ? `${r.usage.promptTokens} in / ${r.usage.completionTokens} out` : "") + f("hash", r.hash) + f("prevHash", r.prevHash) + f("payloadHash", r.payloadHash);
+    + f("scope of approval", r.scopeOf) + f("tokens", r.usage ? `${r.usage.promptTokens} in / ${r.usage.completionTokens} out` : "") + f("hash", r.hash) + f("prevHash", r.prevHash) + f("payloadHash", r.payloadHash);
 }
 $("#verify").onclick = async () => {
   await loadLedger();
@@ -529,6 +535,7 @@ $("#anchor").onclick = async () => {
 const PRESETS = () => [
   { t:"Public question", s:"goes straight out", model:`airlock/${cfg.defaultClaudeModel}`, p:"In two sentences: why do airlocks have two doors?" },
   { t:"Confidential contract", s:"held for a human", model:`airlock/${cfg.defaultClaudeModel}`, p:cfg.demoPrompt ?? "" },
+  { t:"Re-identifiable", s:"attack test catches it", model:`airlock/${cfg.defaultClaudeModel}`, p:"CONFIDENTIAL. Our client TSMC, the Hsinchu-based foundry that manufactures Apple's A-series chips and is the world's largest contract chipmaker, wants to renegotiate volume pricing. Draft three talking points." },
   { t:"Restricted data", s:"never leaves", model:`airlock/${cfg.defaultClaudeModel}`, p:"RESTRICTED. Customer card 4111 1111 1111 1111 was double-charged. Draft an apology." },
   { t:"Local only", s:"stays on the box", model:`local/${cfg.localModel ?? ""}`, p:"Summarise what a data-processing addendum is, in one paragraph." },
 ];
@@ -536,16 +543,46 @@ function renderPresets() {
   $("#presets").innerHTML = PRESETS().map((x, i) => `<button class="preset" data-i="${i}"><b>${x.t}</b><span>${x.s}</span></button>`).join("");
   $$(".preset").forEach((b) => (b.onclick = () => { const x = PRESETS()[+b.dataset.i]; $("#prompt").value = x.p; if ([...$("#model").options].some((o) => o.value === x.model)) $("#model").value = x.model; }));
 }
+let convo = [];
+const newSession = () => { $("#session").value = "try-" + Math.random().toString(36).slice(2, 8); };
+$("#newConvo").onclick = () => { convo = []; newSession(); $("#trace").innerHTML = ""; $("#answer").innerHTML = ""; };
+function turn(role, text) {
+  const el = document.createElement("div"); el.className = `turn ${role}`;
+  el.innerHTML = role === "bot" ? `<span class="who">assistant</span>` : "";
+  el.append(document.createTextNode(text)); $("#answer").querySelector(".muted")?.remove(); $("#answer").append(el); $("#answer").scrollTop = $("#answer").scrollHeight;
+  return el;
+}
 $("#send").onclick = async () => {
-  const headers = { "content-type":"application/json" }; if ($("#session").value) headers["x-airlock-session"] = $("#session").value;
-  $("#send").disabled = true; $("#sendState").textContent = "in flight…"; $("#trace").innerHTML = ""; $("#answer").className = "answer wait"; $("#answer").textContent = "Waiting. If it's confidential, it's sitting in the Queue for an approver.";
+  const text = $("#prompt").value.trim(); if (!text) return;
+  convo.push({ role:"user", content:text }); turn("user", text); $("#prompt").value = "";
+  const bot = turn("bot", ""); bot.classList.add("streaming");
+  const body = bot.lastChild;
+  $("#send").disabled = true; $("#sendState").textContent = "in flight… (confidential requests wait in the Queue)"; $("#trace").innerHTML = "";
+  let answer = "";
   try {
-    const r = await j("/v1/chat/completions", { method:"POST", headers, body:JSON.stringify({ model:$("#model").value, messages:[{ role:"user", content:$("#prompt").value }] }) });
-    const a = r.airlock ?? {};
-    $("#trace").innerHTML = [`route ${a.route}`, a.sourceClass && `class ${a.sourceClass}`, a.entities && `${Object.values(a.entities).reduce((x, y) => x + y, 0)} masked`, `decision ${a.decision}`, a.egressed ? "left the building" : "stayed local"].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("");
-    $("#answer").className = "answer"; $("#answer").textContent = r.choices?.[0]?.message?.content ?? JSON.stringify(r, null, 2);
-  } finally { $("#send").disabled = false; $("#sendState").textContent = ""; }
+    const res = await fetch("/v1/chat/completions", { method:"POST", headers:{ "content-type":"application/json", "x-airlock-session":$("#session").value }, body:JSON.stringify({ model:$("#model").value, stream:true, messages:convo }) });
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += value;
+      for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (!line.startsWith("data:") || line === "data: [DONE]") continue;
+        const j = JSON.parse(line.slice(5));
+        if (j.airlock) {
+          const a = j.airlock;
+          $("#trace").innerHTML = [`route ${a.route}`, a.sourceClass && `class ${a.sourceClass}`, a.entities && `${Object.values(a.entities).reduce((x, y) => x + y, 0)} masked`, a.risk && `risk ${a.risk.level}`, `decision ${a.decision}`, a.scopeOf && `reused approval ${a.scopeOf.slice(0, 8)}`, a.egressed ? "left the building" : "stayed local"].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("");
+          $("#sendState").textContent = "streaming…";
+        }
+        const t = j.choices?.[0]?.delta?.content;
+        if (t) { answer += t; body.textContent = answer; $("#answer").scrollTop = $("#answer").scrollHeight; }
+      }
+    }
+    convo.push({ role:"assistant", content:answer });
+  } catch (e) { body.textContent = answer + `\n[error: ${e.message}]`; }
+  finally { bot.classList.remove("streaming"); $("#send").disabled = false; $("#sendState").textContent = ""; }
 };
+$("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#send").click(); });
 
 /* ---------- live ---------- */
 function toast(title, body, onclick) {
@@ -565,6 +602,7 @@ function tick(decision) {
   $("#model").innerHTML = models.map((m) => `<option>${esc(m)}</option>`).join("");
   $("#model").value = `airlock/${cfg.defaultClaudeModel}`;
   renderPresets();
+  newSession();
   (await j("/audit")).records.slice(-40).forEach((r) => tick(r.decision));
   const hash = location.hash.slice(1);
   if (hash === "ledger" || hash === "try") tab(hash); else if (hash) selected = hash;
