@@ -6,6 +6,7 @@
  *   npm run ens -- enroll <approverName> <commitment>
  *   npm run ens -- revoke <approverName>           unregister the subname (ENS_APPROVER_REGISTRY) and clear airlock.approver
  *   npm run ens -- anchor <root>                   write airlock.auditRoot on ENS_AUDIT_NAME
+ *   npm run ens -- set <name> <key> <value>        write any text record (e.g. airlock.models)
  *   npm run ens -- commitment <nullifier>          what enrollment would store for a nullifier
  *
  * Env: SEPOLIA_RPC_URL, ENS_RESOLVER + ENS_PRIVATE_KEY (writes), ENS_APPROVER_REGISTRY, ENS_AUDIT_NAME, COMMITMENT_SALT, ENS_UNIVERSAL_RESOLVER.
@@ -63,6 +64,9 @@ async function main() {
       return;
     case "anchor":
       console.log(`tx ${await writer().setText(auditName, "airlock.auditRoot", need(args[0], "root"))}`);
+      return;
+    case "set":
+      console.log(`tx ${await writer().setText(need(args[0], "name"), need(args[1], "key"), need(args[2], "value"))}`);
       return;
     case "commitment":
       console.log(commitmentOf(need(args[0], "nullifier")));

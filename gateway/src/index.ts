@@ -23,7 +23,8 @@ const egress: FrontierModel =
   env.EGRESS_PROVIDER === "openai"
     ? new OpenAICompatModel(env.EGRESS_API_KEY, requireEnv("EGRESS_BASE_URL"))
     : new ClaudeModel(env.EGRESS_API_KEY ?? env.ANTHROPIC_API_KEY, env.EGRESS_BASE_URL ?? "https://api.anthropic.com");
-const defaultClaudeModel = env.CLAUDE_MODEL ?? "claude-sonnet-5";
+// Default frontier model for airlock/* and auto escalation (EGRESS_MODEL; CLAUDE_MODEL kept for compatibility).
+const defaultClaudeModel = env.EGRESS_MODEL ?? env.CLAUDE_MODEL ?? "claude-sonnet-5";
 
 // Redactor: rules → company dictionary → Presidio (optional sidecar)
 const recognizers: Recognizer[] = [ruleRecognizer, dictionaryRecognizer(JSON.parse(readFileSync(path(env.DICTIONARY_FILE ?? "demo/dictionary.json"), "utf8")))];
@@ -93,7 +94,7 @@ const app = buildApp({
   roles,
   verifier,
   localModel: local.model,
-  claudeModels: (env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
+  claudeModels: (env.EGRESS_MODELS ?? env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
   consoleHtml: readFileSync(path("console/index.html"), "utf8"),
   approveAction: env.WORLD_ACTION ?? "airlock-approve",
   ensLink: env.SEPOLIA_RPC_URL ? () => `https://app.ens.dev/${auditName}` : undefined,
