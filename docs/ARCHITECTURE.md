@@ -202,3 +202,21 @@ airlock/
 2. ENSv2 Sepolia：EAC 能不能限制只有特定角色能改 `airlock.*` 這類 text record？
 3. GB10 能不能從會場連線？
 4. LibreChat 的請求 timeout 能拉到多長？
+
+---
+
+## 實作狀態（2026-09-26）
+
+| 項目 | 狀態 |
+|---|---|
+| Router（local / airlock / auto）＋ 串流 | ✅ 真正的 token 串流；client 斷線會取消上游，並仍寫入稽核 |
+| Redactor：規則 → 字典 → Presidio → 本地模型標記 | ✅（本地模型標記：`REDACT_LLM=1`） |
+| RiskScorer：規則 ＋ 本地攻擊測試（P2） | ✅ 本地模型嘗試還原代號，猜中即為高風險 |
+| PolicyResolver / RoleRegistry（ENS） | ✅ 讀取已在 Sepolia 實測；寫入需要 key（`npm run ens`） |
+| Approver（World ID 4.0） | ✅ 程式完成，mock 模式實測；真實 staging app 待設定 |
+| 核可範圍（P2） | ✅ 每次沿用都重新檢查核可者的 ENS 角色，撤銷即失效 |
+| AuditSink：hash chain ＋ Merkle ＋ 錨定 | ✅（錨定到鏈上需要 key） |
+| Console | ✅ 單一 HTML（由 gateway 提供），未改用 Next.js |
+| LibreChat | 提供設定片段 `demo/librechat.yaml`，未改動本機運行中的 LibreChat |
+| Hermes | 依砍功能順序未做；可用 `skills/airlock/SKILL.md` 接入 |
+

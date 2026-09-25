@@ -66,6 +66,19 @@
 - **地址每次重新部署都會變**（`0xeeee…` 例外），所以只放在 env（`ENS_RESOLVER`），不寫死在程式裡。
 - 另外有一組 09-03 的「hackathon clean testnet」部署（ensjs PR #377）。要跟主辦方確認用哪一組。
 
+### `npm run ens` 指令
+
+```bash
+npm run ens -- check contract-agent.agents.acme.eth alice.legal.approvers.acme.eth   # 讀取 policy、approver、auditRoot（不需要 key）
+npm run ens -- set-policy contract-agent.agents.acme.eth demo/policies.json         # 寫入 airlock.* policy records
+npm run ens -- commitment 0x…nullifier                                               # 算出 enroll 會存的 commitment
+npm run ens -- enroll alice.legal.approvers.acme.eth 0x…commitment
+npm run ens -- revoke alice.legal.approvers.acme.eth
+npm run ens -- anchor 0x…root
+```
+
+實測：`check` 直接讀 Sepolia。目前 `acme.eth` 底下沒有 airlock records，所以 effective policy 是 fail-closed（`egress=block`）。Demo 請改用你自己註冊的名稱（例如 `airlock-demo.eth`），並把 `DEFAULT_AGENT`、`ENS_AUDIT_NAME` 和 `demo/policies.json` 的 key 改成對應的名稱。
+
 ### Demo 前的 ENS 設定清單
 1. 在 app.ens.dev（Sepolia）註冊 `acme.eth`，並建立 subname：`agents`、`contract-agent.agents`、`legal.approvers`、`audit`。
 2. 部署 PermissionedResolver proxy，對 gateway 帳號授權 `airlock.auditRoot` 和 `airlock.approver` 的 `setText`。
