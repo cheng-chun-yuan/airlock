@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dictionaryRecognizer, newSession, PipelineRedactor, rehydrateText, ruleRecognizer } from "./index";
+import { dictionaryRecognizer, LocalAttackScorer, llmRecognizer, newSession, PipelineRedactor, rehydrateText, ruleRecognizer, StreamRehydrator } from "./index";
 
 const dict = JSON.parse(readFileSync(new URL("../../demo/dictionary.json", import.meta.url), "utf8"));
 const redactor = new PipelineRedactor([ruleRecognizer, dictionaryRecognizer(dict)]);
@@ -34,4 +34,34 @@ test("rehydrate restores values, tolerating escaped brackets", () => {
   const s = newSession("t4");
   s.reverse.set("<ORG_1>", "Globex Corporation");
   assert.equal(rehydrateText("Ask \\<ORG_1\\> and < ORG_1 >; keep <MONEY_9>.", s), "Ask Globex Corporation and Globex Corporation; keep <MONEY_9>.");
+});
+
+test("stream rehydration survives placeholders split across chunks", () => {
+  const s = newSession("t5");
+  s.reverse.set("<ORG_1>", "Globex Corporation");
+  s.reverse.set("<PERSON_12>", "Hank Scorpio");
+  const pieces = ["Ask ", "\\", "<PER", "SON_", "12\\", "> at <", "ORG_1", ">", " if 3 < 5 and a<b.", " Done <"];
+  const r = new StreamRehydrator(s);
+  const out = pieces.map((p) => r.push(p)).join("") + r.flush();
+  assert.equal(out, "Ask Hank Scorpio at Globex Corporation if 3 < 5 and a<b. Done <");
+});
+
+test("local attack test: a correct guess of a placeholder is a measured leak → high", async () => {
+  const mapping = { "<ORG_1>": "Apple Inc.", "<PERSON_1>": "Hank Scorpio" };
+  const payload = [{ role: "user" as const, content: "The Cupertino iPhone maker <ORG_1> hired <PERSON_1>." }];
+  const leaky = new LocalAttackScorer(async () => '```json\n{"<ORG_1>": "Apple", "<PERSON_1>": null}\n```');
+  const r = await leaky.score(payload, mapping);
+  assert.equal(r.level, "high");
+  assert.match(r.findings.join(), /re-identified <ORG_1>/);
+  const blind = new LocalAttackScorer(async () => '{"<ORG_1>": "Samsung", "<PERSON_1>": "John Smith"}');
+  assert.equal((await blind.score(payload, mapping)).level, "low");
+  const broken = new LocalAttackScorer(async () => { throw new Error("down"); });
+  assert.match((await broken.score(payload, mapping)).findings.join(), /unavailable/);
+});
+
+test("llm recognizer accepts only verbatim substrings", async () => {
+  const text = "Our client, the largest chip foundry in Hsinchu, wants Project Bluebird kept quiet until Q3.";
+  const rec = llmRecognizer(async () => '[{"text":"the largest chip foundry in Hsinchu","type":"ORG"},{"text":"Project Bluebird","type":"PROJECT"},{"text":"invented stuff","type":"ORG"},{"text":"Q3","type":"ID"}]');
+  const spans = await rec.find(text);
+  assert.deepEqual(spans.map((s) => text.slice(s.start, s.end)), ["the largest chip foundry in Hsinchu", "Project Bluebird"]);
 });

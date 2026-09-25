@@ -211,3 +211,120 @@ export class RuleRiskScorer implements RiskScorer {
     return { level: findings.length >= 2 ? "high" : "low", findings };
   }
 }
+
+/**
+ * Streaming rehydration: tokens can split a placeholder ("<ORG" + "_1>"), so
+ * hold back a trailing, unclosed "<…" (and an escaping backslash before it)
+ * until it either closes or grows too long to be a placeholder.
+ */
+export class StreamRehydrator {
+  private buf = "";
+  constructor(private session: Session, private maxHold = 48) {}
+
+  push(text: string): string {
+    this.buf += text;
+    let cut = this.buf.length;
+    const open = this.buf.lastIndexOf("<");
+    if (open >= 0 && !this.buf.includes(">", open) && this.buf.length - open < this.maxHold) cut = open;
+    else if (this.buf.endsWith("\\")) cut = this.buf.length - 1;
+    if (cut < this.buf.length && cut > 0 && this.buf[cut - 1] === "\\") cut--;
+    const out = this.buf.slice(0, cut);
+    this.buf = this.buf.slice(cut);
+    return rehydrateText(out, this.session);
+  }
+
+  flush(): string {
+    const out = rehydrateText(this.buf, this.session);
+    this.buf = "";
+    return out;
+  }
+}
+
+/** A local model question → answer function (never a frontier model). */
+export type Ask = (system: string, user: string) => Promise<string>;
+
+function firstJson(text: string): unknown {
+  const s = text.replace(/```(?:json)?/g, "");
+  for (const [o, c] of [["{", "}"], ["[", "]"]] as const) {
+    const i = s.indexOf(o), k = s.lastIndexOf(c);
+    if (i >= 0 && k > i) {
+      try {
+        return JSON.parse(s.slice(i, k + 1));
+      } catch {}
+    }
+  }
+  return null;
+}
+
+const TAG_SYSTEM = `You find indirect identifiers in business text: substrings that could single out a specific person, company, deal or place even without a name — e.g. job title + organisation context, unique descriptors ("the largest bank in Taiwan"), project codenames, internal ids, addresses.
+Return ONLY a JSON array of {"text": "<exact substring>", "type": "PERSON|ORG|LOCATION|PROJECT|ID|INDIRECT"}. Copy substrings verbatim. Return [] if none. Do not include generic words.`;
+
+/**
+ * Redactor step 3: the local model tags indirect identifiers that rules and
+ * dictionaries miss. Only verbatim substrings (≥4 chars) are accepted; results
+ * are cached per text so a growing conversation isn't re-tagged every turn.
+ */
+export function llmRecognizer(ask: Ask, maxChars = 12_000): Recognizer {
+  const cache = new Map<string, Span[]>();
+  return {
+    name: "local-llm",
+    async find(text) {
+      if (text.length < 40) return [];
+      const hit = cache.get(text);
+      if (hit) return hit;
+      const found = firstJson(await ask(TAG_SYSTEM, text.slice(0, maxChars)));
+      const spans: Span[] = [];
+      if (Array.isArray(found))
+        for (const f of found.slice(0, 30) as { text?: string; type?: string }[]) {
+          const t = typeof f?.text === "string" ? f.text.trim() : "";
+          if (t.length < 4) continue;
+          const type = /^(PERSON|ORG|LOCATION|PROJECT|ID|INDIRECT)$/.test(f.type ?? "") ? f.type! : "INDIRECT";
+          for (let i = text.indexOf(t); i !== -1; i = text.indexOf(t, i + t.length)) spans.push({ start: i, end: i + t.length, type });
+        }
+      cache.set(text, spans);
+      return spans;
+    },
+  };
+}
+
+const ATTACK_SYSTEM = `You are a red-team analyst testing an anonymisation system. In the text, real names and identifiers were replaced by placeholders like <ORG_1> or <PERSON_2>.
+Using the surrounding context and your world knowledge, guess the real value behind each placeholder. Return ONLY a JSON object mapping each placeholder to your best guess, or null if you genuinely cannot tell.`;
+
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/**
+ * P2 "local attack test": before anything leaves, the LOCAL model tries to
+ * re-identify the placeholders from context. Because the gateway holds the
+ * real mapping, a hit is a measured leak, not a heuristic — it forces `high`.
+ * Rule findings from `base` are kept.
+ */
+export class LocalAttackScorer implements RiskScorer {
+  constructor(
+    private ask: Ask,
+    private base: RiskScorer = new RuleRiskScorer(),
+    private onError: (e: unknown) => void = () => {},
+    private maxChars = 12_000,
+  ) {}
+
+  async score(payload: ChatMessage[], mapping: Record<string, string> = {}): Promise<RiskResult> {
+    const base = await this.base.score(payload, mapping);
+    const placeholders = Object.keys(mapping);
+    if (!placeholders.length) return base;
+    const text = payload.map((m) => m.content ?? "").join("\n\n").slice(0, this.maxChars);
+    let guesses: Record<string, unknown> = {};
+    try {
+      guesses = (firstJson(await this.ask(ATTACK_SYSTEM, text)) as Record<string, unknown>) ?? {};
+    } catch (e) {
+      this.onError(e);
+      return { ...base, findings: [...base.findings, "local attack test unavailable"] };
+    }
+    const leaks = placeholders.filter((ph) => {
+      const g = guesses[ph] ?? guesses[ph.slice(1, -1)];
+      if (typeof g !== "string") return false;
+      const guess = norm(g), real = norm(mapping[ph]);
+      return guess.length >= 3 && real.length >= 3 && (guess === real || (real.length >= 4 && guess.includes(real)) || (guess.length >= 4 && real.includes(guess)));
+    });
+    if (!leaks.length) return base;
+    return { level: "high", findings: [...base.findings, `local attacker re-identified ${leaks.join(", ")}`] };
+  }
+}

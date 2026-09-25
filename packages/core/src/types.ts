@@ -104,6 +104,8 @@ export interface AuditRecord {
   /** Attribution: which agent policy the request ran under, and what egress cost in tokens. */
   agent?: string;
   usage?: { promptTokens: number; completionTokens: number };
+  /** Set when this egress rode on an earlier approval in the same session (approval scope). */
+  scopeOf?: string;
   timestamp: number;
   hash: string;
   gatewaySig: string;
@@ -113,7 +115,8 @@ export interface Redactor {
   redact(msgs: ChatMessage[], session: Session): Promise<RedactResult>;
 }
 export interface RiskScorer {
-  score(payload: ChatMessage[]): Promise<RiskResult> | RiskResult;
+  /** `mapping` (placeholder -> real value) is local ground truth, e.g. for grading a re-identification attack. */
+  score(payload: ChatMessage[], mapping?: Record<string, string>): Promise<RiskResult> | RiskResult;
 }
 export interface PolicyResolver {
   resolve(agentId: string): Promise<Policy>;
