@@ -75,6 +75,7 @@ const pipeline = new Pipeline({
   // Local attack test (on by default): the local model tries to re-identify placeholders before anything leaves.
   risk: env.ATTACK_TEST === "0" ? new RuleRiskScorer() : new LocalAttackScorer(ask, new RuleRiskScorer(), (e) => console.warn(`[risk] attack test failed: ${(e as Error).message}`)),
   policies,
+  roles,
   approvals,
   audit,
   defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",

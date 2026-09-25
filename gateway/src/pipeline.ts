@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  CLASS_ORDER,
   decide,
   hashOf,
   type AuditRecord,
@@ -8,6 +7,7 @@ import {
   type Decision,
   type PolicyResolver,
   type RiskLevel,
+  type RoleRegistry,
   type RiskScorer,
   type Route,
   type Session,
@@ -23,6 +23,7 @@ export interface Deps {
   redactor: PipelineRedactor;
   risk: RiskScorer;
   policies: PolicyResolver;
+  roles: RoleRegistry;
   approvals: ApprovalStore;
   audit: JsonlAuditLog;
   defaultAgent: string;
@@ -72,6 +73,7 @@ interface Grant {
   approvalId: string;
   agent: string;
   targetModel: string;
+  role: string;
   placeholders: Set<string>;
   risk: RiskLevel;
   decision: Decision;
@@ -125,7 +127,8 @@ export class Pipeline {
   }
 
   /** Streaming entry point: all checks (and any approval) finish before the first byte is sent. */
-  async stream(model: string, messages: ChatMessage[], opts: { sessionId?: string; agent?: string; extra?: Record<string, unknown> }): Promise<Streamed> {
+  async stream(model: string, messages: ChatMessage[], opts: { sessionId?: string; agent?: string; extra?: Record<string, unknown>; signal?: AbortSignal }): Promise<Streamed> {
+    const { signal } = opts;
     const plan = await this.plan(model, messages, opts);
     const { d } = this;
     const self = this;
@@ -141,14 +144,14 @@ export class Pipeline {
           })(),
         };
       case "local":
-        return { model: localModel, airlock: plan.meta, chunks: d.local.stream(messages, opts.extra) };
+        return { model: localModel, airlock: plan.meta, chunks: d.local.stream(messages, opts.extra, signal) };
       case "fallback":
         return {
           model: localModel,
           airlock: plan.meta,
           chunks: (async function* () {
             yield { text: plan.notice };
-            yield* d.local.stream(messages);
+            yield* d.local.stream(messages, {}, signal);
           })(),
         };
       case "egress":
@@ -157,34 +160,47 @@ export class Pipeline {
           airlock: { ...plan.meta, egressed: true },
           chunks: (async function* () {
             const rh = new StreamRehydrator(plan.session);
-            let usage: Usage | undefined, finishReason: string | undefined, started = false;
+            let usage: Usage | undefined, finishReason: string | undefined, started = false, recorded = false, completed = false;
+            const record = (reason?: string) => {
+              if (recorded) return;
+              recorded = true;
+              self.record({ ...plan.audit, ...(reason && { reason }), usage: usageRec(usage) });
+            };
             try {
-              for await (const c of d.egress.stream(plan.targetModel, plan.payload)) {
-                if (c.text) {
-                  started = true;
-                  const t = rh.push(c.text);
-                  if (t) yield { text: t };
+              try {
+                for await (const c of d.egress.stream(plan.targetModel, plan.payload, signal)) {
+                  if (c.text) {
+                    started = true;
+                    const t = rh.push(c.text);
+                    if (t) yield { text: t };
+                  }
+                  usage = c.usage ?? usage;
+                  finishReason = c.finishReason ?? finishReason;
                 }
-                usage = c.usage ?? usage;
-                finishReason = c.finishReason ?? finishReason;
-              }
-            } catch (e) {
-              if (!started) {
-                // Nothing reached the client yet: fall back to the local model, like the non-streaming path.
-                const fb = self.egressFailed(plan, e);
-                yield { text: fb.notice };
-                yield* d.local.stream(messages);
+              } catch (e) {
+                if (signal?.aborted) return; // client hung up; `finally` audits it
+                if (!started) {
+                  // Nothing reached the client yet: fall back to the local model, like the non-streaming path.
+                  recorded = true;
+                  const fb = self.egressFailed(plan, e);
+                  yield { text: fb.notice };
+                  yield* d.local.stream(messages, {}, signal);
+                  return;
+                }
+                record(`stream interrupted: ${(e as Error).message.slice(0, 160)}`);
+                yield { text: rh.flush() + "\n\n> ⚠️ Airlock: upstream stream interrupted." };
+                yield { finishReason: "stop" };
                 return;
               }
-              self.record({ ...plan.audit, reason: `stream interrupted: ${(e as Error).message.slice(0, 160)}` });
-              yield { text: rh.flush() + "\n\n> ⚠️ Airlock: upstream stream interrupted." };
-              yield { finishReason: "stop" };
-              return;
+              const tail = rh.flush();
+              if (tail) yield { text: tail };
+              record();
+              completed = true;
+              yield { finishReason: finishReason ?? "stop", usage };
+            } finally {
+              // The payload already left: a client that hangs up mid-stream must not erase the audit trail.
+              if (!completed) record("client disconnected mid-stream");
             }
-            const tail = rh.flush();
-            if (tail) yield { text: tail };
-            self.record({ ...plan.audit, usage: usageRec(usage) });
-            yield { finishReason: finishReason ?? "stop", usage };
           })(),
         };
     }
@@ -252,15 +268,22 @@ export class Pipeline {
 
     // approval / owner — first see whether an earlier approval in this session already covers it
     const placeholders = Object.keys(red.mapping);
-    const grant = (grants.get(sessionId) ?? []).find(
+    const candidate = (grants.get(sessionId) ?? []).find(
       (g) =>
         g.until > Date.now() &&
         g.agent === policy.agent &&
         g.targetModel === targetModel &&
+        g.role === route.role &&
         riskRank(risk.level) <= riskRank(g.risk) &&
-        placeholders.every((p) => g.placeholders.has(p)) &&
-        CLASS_ORDER.indexOf(red.sourceClass) <= CLASS_ORDER.indexOf(policy.maxClass),
+        placeholders.every((p) => g.placeholders.has(p)),
     );
+    // A grant is only as good as its approver: re-check the ENS role, so revocation also ends the scope.
+    let grant: Grant | undefined;
+    if (candidate) {
+      const roleNow = await d.roles.isValidApprover(candidate.decision.approverCommitment ?? "", candidate.role, candidate.decision.approverName);
+      if (roleNow === "valid") grant = candidate;
+      else grants.set(sessionId, (grants.get(sessionId) ?? []).filter((g) => g !== candidate));
+    }
     if (grant) {
       const reason = `within approved scope of ${grant.approvalId.slice(0, 8)} (no new entities, risk ≤ ${grant.risk})`;
       return {
@@ -311,7 +334,7 @@ export class Pipeline {
     if (d.approvalScopeMs > 0)
       grants.set(sessionId, [
         ...(grants.get(sessionId) ?? []).filter((g) => g.until > Date.now()),
-        { approvalId: req.id, agent: policy.agent, targetModel, placeholders: new Set(placeholders), risk: risk.level, decision, until: Date.now() + d.approvalScopeMs },
+        { approvalId: req.id, agent: policy.agent, targetModel, role: route.role, placeholders: new Set(placeholders), risk: risk.level, decision, until: Date.now() + d.approvalScopeMs },
       ]);
 
     return {
