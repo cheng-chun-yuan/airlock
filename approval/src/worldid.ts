@@ -26,7 +26,7 @@ export interface VerifyResult {
 export interface ProofVerifier {
   readonly mode: "worldid" | "mock";
   /** What the browser needs to build the IDKit request for this action. */
-  requestContext(action: string, signal: string): { app_id?: string; action: string; signal: string; environment: string; rp_context?: unknown; mode: string };
+  requestContext(action: string, signal: string): { app_id?: string; action: string; signal: string; environment: string; rp_context?: unknown; mode: string; preset?: string; allow_legacy_proofs?: boolean };
   verify(proof: WorldIdProof, expectedSignal: string, expectedAction: string): Promise<VerifyResult>;
 }
 
@@ -35,6 +35,10 @@ export interface WorldIdConfig {
   rpId: string;
   signingKeyHex: string;
   environment: "production" | "staging";
+  /** "v4" = native World ID 4.0 Proof of Human (default; what the simulator supports), "legacy" = v3 Orb proof. */
+  proof?: "v4" | "legacy";
+  /** Token from the portal's 24h staging verification window; required for staging proofs on /api/v4/verify. */
+  stagingToken?: string;
   verifyBase?: string; // default developer.world.org (v4)
   legacyBase?: string; // default developer.worldcoin.org (v2, apps not yet migrated to World ID 4.0)
 }
@@ -42,10 +46,10 @@ export interface WorldIdConfig {
 /**
  * Role binding needs a *stable* per-person identifier: the gateway stores
  * commitment(nullifier) under the approver's ENS subname at enrollment and
- * compares at approval time. Legacy v3 nullifiers are stable per (app, action,
- * person); v4 uniqueness nullifiers are one-time-use. So we use ONE fixed
- * action for enroll + approve, request legacy proofs, and bind each approval
- * to its payload through the signal instead of the action.
+ * compares at approval time. Nullifiers are deterministic per (RP, action,
+ * person) — the portal even reports "nullifier reuse" — so we use ONE fixed
+ * action for enroll + approve and bind each approval to its payload through
+ * the signal instead of the action.
  */
 export class WorldIdVerifier implements ProofVerifier {
   readonly mode = "worldid" as const;
@@ -55,12 +59,15 @@ export class WorldIdVerifier implements ProofVerifier {
 
   requestContext(action: string, signal: string) {
     const s = signRequest({ signingKeyHex: this.cfg.signingKeyHex, action, ttl: 300 });
+    const legacy = this.cfg.proof === "legacy";
     return {
       mode: this.mode,
       app_id: this.cfg.appId,
       action,
       signal,
       environment: this.cfg.environment,
+      preset: legacy ? "orbLegacy" : "proofOfHuman",
+      allow_legacy_proofs: legacy,
       rp_context: { rp_id: this.cfg.rpId, nonce: s.nonce, created_at: s.createdAt, expires_at: s.expiresAt, signature: s.sig },
     };
   }
@@ -69,16 +76,16 @@ export class WorldIdVerifier implements ProofVerifier {
     const r = proof.responses?.[0];
     if (!r) return { ok: false, error: "no responses in proof" };
     if (proof.action !== expectedAction) return { ok: false, error: `action mismatch (${proof.action})` };
+    if (this.cfg.proof !== "legacy" && proof.protocol_version !== "4.0") return { ok: false, error: `World ID 4.0 proof required (got ${proof.protocol_version})` };
     // The portal only checks the proof against the signal_hash we hand it, so check the binding ourselves.
     if (r.signal_hash !== hashSignal(expectedSignal)) return { ok: false, error: "signal does not match payloadHash" };
     const replayKey = `${proof.nonce}:${r.nullifier}:${r.signal_hash}`;
     if (this.used.has(replayKey)) return { ok: false, error: "proof already used" };
 
-    const base = this.cfg.verifyBase ?? (this.cfg.environment === "staging" ? "https://staging-developer.worldcoin.org" : "https://developer.world.org");
-    const res = await fetch(`${base}/api/v4/verify/${this.cfg.rpId}`, {
+    const res = await fetch(`${this.cfg.verifyBase ?? "https://developer.world.org"}/api/v4/verify/${this.cfg.rpId}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(proof),
+      headers: { "content-type": "application/json", ...(this.cfg.stagingToken && { "x-staging-verification-token": this.cfg.stagingToken }) },
+      body: JSON.stringify(this.cfg.proof === "legacy" ? proof : { ...proof, min_protocol_version: "4.0" }),
     });
     const j = (await res.json().catch(() => ({}))) as { success?: boolean; code?: string; detail?: string };
     if (j.code === "app_not_migrated") {
@@ -90,9 +97,6 @@ export class WorldIdVerifier implements ProofVerifier {
     }
     if (!res.ok || !j.success) return { ok: false, error: j.code ? `${j.code}: ${j.detail ?? ""}` : `verify HTTP ${res.status}` };
     this.used.add(replayKey);
-    if (proof.protocol_version === "4.0")
-      // Still a verified human, but the nullifier won't match an enrollment made with another proof.
-      return { ok: true, nullifier: r.nullifier, protocol: "4.0" };
     return { ok: true, nullifier: r.nullifier, protocol: proof.protocol_version };
   }
 
