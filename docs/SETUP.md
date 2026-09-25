@@ -16,6 +16,7 @@ node --input-type=module -e 'import {createPublicClient,http,formatEther} from "
 2. **Enable World ID 4.0 / Relying Party.** In the app's World ID settings, register it as a Relying Party. Copy the **RP ID** (`rp_…`) and generate an **RP signing key** (hex). The gateway uses the key to sign each request (`rp_context`). Keep it secret.
 3. **Set up the action.** Create an action called `airlock-approve` with **unlimited verifications per user**; v4 can also create it on first use.
    - Enrollment and approval **share this one action**. That keeps a person's nullifier stable, so the commitment stored at enrollment matches at approval time. Each approval is bound to its payload through the *signal* (`payloadHash`), not through the action.
+   - **Tested against the live API:** an app that hasn't been migrated to World ID 4.0 gets `app_not_migrated` from `/api/v4/verify`. The gateway then retries on `/api/v2/verify` automatically. v2 does **not** auto-create actions and answers `invalid_action: Action not found` until you create `airlock-approve` in the portal.
 4. **Configure `.env`:**
    ```
    WORLD_APP_ID=app_...
