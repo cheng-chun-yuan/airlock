@@ -10,25 +10,39 @@ The gateway's Sepolia key lives in `.env` (gitignored) as `ENS_PRIVATE_KEY`, wit
 node --input-type=module -e 'import {createPublicClient,http,formatEther} from "viem";import {sepolia} from "viem/chains";const c=createPublicClient({chain:sepolia,transport:http("https://ethereum-sepolia-rpc.publicnode.com")});console.log(formatEther(await c.getBalance({address:process.argv[1]})),"ETH")' $(grep ENS_ADDRESS .env | cut -d= -f2)
 ```
 
-## 1. World ID (staging)
+## 1. World ID 4.0
 
-1. **Create an app.** Sign in at <https://developer.world.org>, create an app, and pick **Staging**. Copy the **App ID** (`app_…`).
-2. **Enable World ID 4.0 / Relying Party.** In the app's World ID settings, register it as a Relying Party. Copy the **RP ID** (`rp_…`) and generate an **RP signing key** (hex). The gateway uses the key to sign each request (`rp_context`). Keep it secret.
-3. **Set up the action.** Create an action called `airlock-approve` with **unlimited verifications per user**; v4 can also create it on first use.
-   - Enrollment and approval **share this one action**. That keeps a person's nullifier stable, so the commitment stored at enrollment matches at approval time. Each approval is bound to its payload through the *signal* (`payloadHash`), not through the action.
-   - **Tested against the live API:** an app that hasn't been migrated to World ID 4.0 gets `app_not_migrated` from `/api/v4/verify`. The gateway then retries on `/api/v2/verify` automatically. v2 does **not** auto-create actions and answers `invalid_action: Action not found` until you create `airlock-approve` in the portal.
+**Verified end to end (2026-09-26)** against World's staging network, with the World ID simulator acting as the phone:
+1. Enroll → real proof → commitment stored.
+2. Approve with a second real proof → same nullifier → role `valid` → approved.
+3. The same human claiming another approver's name → `role_invalid`.
+
+### With the Developer Portal MCP (what we used)
+
+```bash
+claude mcp add worldcoin-developer-portal https://developer.world.org/api/mcp --transport http --header "Authorization: Bearer <team API key>"
+```
+
+1. **Check the app.** `get_app_config {app_id}` should show a managed RP with `status: registered`, whose `signer_address` matches your RP signing key. If there's no RP, run `configure_world_id {app_id}` and save the returned private key once.
+2. **Create the action.** `create_world_id_action {app_id, action: "airlock-approve", environment: "staging"}`, plus `"production"`. Enrollment and approval **share this one action**: nullifiers are deterministic per (RP, action, person), so the enrolled commitment matches at approval. Each approval is bound to its payload by the signal (`payloadHash`).
+3. **Open the staging window.** `set_world_id_staging_verification {app_id, enabled: true}` opens a **24-hour window**. Put the token it returns (shown once) in `.env` as `WORLD_STAGING_TOKEN`. The gateway sends it as `x-staging-verification-token`. When the window expires, run the call again.
 4. **Configure `.env`:**
    ```
    WORLD_APP_ID=app_...
    WORLD_RP_ID=rp_...
    WORLD_RP_SIGNING_KEY=0x...
    WORLD_ENV=staging
+   WORLD_STAGING_TOKEN=...
+   # WORLD_PROOF=legacy   # v3 Orb proofs instead of native v4 Proof of Human
    ```
-5. **Restart** with `npm start`. The Console header should now show `world id worldid`.
-6. **Enroll an approver.** In the Console, open **Enroll**, type the ENS name (e.g. `alice.legal.approvers.<you>.eth`) and click **Enroll with World ID**. Scan the QR with World App. In staging you can instead paste the link into <https://simulator.worldcoin.org>.
-7. **Approve.** Send a confidential request (**Try it → Confidential contract**). In **Queue**, enter the same ENS name and hold **open outer door**, then scan again.
+5. **Restart.** The Console header shows `world id worldid`.
+6. **Enroll.** Console → **Enroll** → type an ENS name → scan the QR code. Without a phone, use the **World ID simulator**: paste the link at <https://simulator.worldcoin.org>, or have an agent call `complete_test_request {connect_url}` on the simulator MCP (`https://simulator.worldcoin.org/api/mcp`, no key).
+7. **Approve.** Queue → type the same ENS name → hold **open outer door** → scan.
 
-The Console asks for an **Orb** legacy credential (`orbLegacy`), which the simulator provides. On a real phone the approver needs an Orb-verified World ID. For device-level only, switch the preset to `deviceLegacy` in `console/index.html`.
+### Notes
+- **Proof type:** the default is native **World ID 4.0 Proof of Human** (`proofOfHuman`, `min_protocol_version: "4.0"`), which is what the simulator supports. `WORLD_PROOF=legacy` switches to v3 Orb proofs. For apps not migrated to 4.0, those fall back to `/api/v2/verify`, where the action must already exist in the portal.
+- **IDKit is served locally.** The gateway serves the browser bundle and its WASM from `node_modules` at `/vendor/idkit/`, because the CDN build fails WASM initialization.
+- **Replays:** v4 accepts nullifier reuse (with a message), so the gateway rejects replays itself.
 
 ## 2. ENS v2 on Sepolia
 
