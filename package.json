@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit -p .",
     "smoke": "bash demo/smoke.sh",
     "test": "tsx --test \"**/src/**/*.test.ts\"",
-    "ens": "tsx --env-file-if-exists=.env registry/scripts/ens.ts"
+    "ens": "tsx --env-file-if-exists=.env registry/scripts/ens.ts",
+    "ens:setup": "tsx --env-file-if-exists=.env registry/scripts/ens-setup.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
