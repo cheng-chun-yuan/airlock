@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, parseAbi, toHex, type Hex, type PublicClient } from "viem";
+import { createPublicClient, createWalletClient, http, keccak256, parseAbi, toBytes, toHex, zeroAddress, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import { normalize, packetToBytes } from "viem/ens";
@@ -63,18 +63,29 @@ export class EnsRoleRegistry implements RoleRegistry {
     return "valid";
   }
 
+  /** Creates the approver's subname if needed (ENS_APPROVER_REGISTRY), then stores the commitment. */
   async enroll(name: string, commitment: string) {
     if (!this.writer) throw new Error("ENS writer not configured (ENS_PRIVATE_KEY / ENS_RESOLVER)");
+    await this.writer.ensureSubname(normalize(name).split(".")[0]);
     await this.writer.setText(name, "airlock.approver", commitment);
   }
 
+  /** Unregisters the subname (ENS_APPROVER_REGISTRY) and clears the record, so nothing resolves any more. */
   async revoke(name: string) {
     if (!this.writer) throw new Error("ENS writer not configured (ENS_PRIVATE_KEY / ENS_RESOLVER)");
+    await this.writer.unregister(normalize(name).split(".")[0]);
     await this.writer.setText(name, "airlock.approver", "");
   }
 }
 
 const resolverAbi = parseAbi(["function setText(bytes name, string key, string value)"]);
+const registryAbi = parseAbi([
+  "function register(string label, address owner, address registry, address resolver, uint256 roleBitmap, uint64 expiry) returns (uint256)",
+  "function unregister(uint256 anyId)",
+  "function getResolver(string label) view returns (address)",
+]);
+// Token roles for approver subnames: unregister, renew, set subregistry, set resolver (+ their admin roles).
+const APPROVER_TOKEN_ROLES = [12n, 16n, 20n, 24n].reduce((acc, b) => acc | (1n << b) | (1n << (b + 128n)), 0n);
 
 /**
  * Writes to an ENSv2 PermissionedResolver. Setters take the DNS-encoded name
@@ -84,7 +95,14 @@ const resolverAbi = parseAbi(["function setText(bytes name, string key, string v
  */
 export class EnsWriter {
   private wallet;
-  constructor(rpcUrl: string, privateKey: Hex, private resolver: Hex, private client: PublicClient) {
+  constructor(
+    rpcUrl: string,
+    privateKey: Hex,
+    private resolver: Hex,
+    private client: PublicClient,
+    /** UserRegistry that holds <approver>.legal.approvers.<org>.eth (from `npm run ens:setup`). */
+    private approverRegistry?: Hex,
+  ) {
     this.wallet = createWalletClient({ account: privateKeyToAccount(privateKey), chain: sepolia, transport: http(rpcUrl) });
   }
 
@@ -97,5 +115,28 @@ export class EnsWriter {
     });
     await this.client.waitForTransactionReceipt({ hash });
     return hash;
+  }
+
+  private async write(fn: "register" | "unregister", args: readonly unknown[]): Promise<Hex> {
+    if (!this.approverRegistry) throw new Error("ENS_APPROVER_REGISTRY not set");
+    const { request } = await this.client.simulateContract({ account: this.wallet.account, address: this.approverRegistry, abi: registryAbi, functionName: fn, args } as any);
+    const hash = await this.wallet.writeContract(request as any);
+    const rcpt = await this.client.waitForTransactionReceipt({ hash });
+    if (rcpt.status !== "success") throw new Error(`${fn} reverted (${hash})`);
+    return hash;
+  }
+
+  /** Register `label` in the approver registry with our resolver, unless it's already live. */
+  async ensureSubname(label: string, days = 180): Promise<Hex | undefined> {
+    if (!this.approverRegistry) return;
+    const current = await this.client.readContract({ address: this.approverRegistry, abi: registryAbi, functionName: "getResolver", args: [label] });
+    if (current !== zeroAddress) return;
+    const expiry = BigInt(Math.floor(Date.now() / 1000) + days * 86400);
+    return this.write("register", [label, this.wallet.account.address, zeroAddress, this.resolver, APPROVER_TOKEN_ROLES, expiry]);
+  }
+
+  async unregister(label: string): Promise<Hex | undefined> {
+    if (!this.approverRegistry) return;
+    return this.write("unregister", [BigInt(keccak256(toBytes(label)))]);
   }
 }

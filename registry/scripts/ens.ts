@@ -4,11 +4,11 @@
  *   npm run ens -- check <agent> [approverName]    read policy, approver and audit records
  *   npm run ens -- set-policy <agent> [file]       write airlock.* policy records (default demo/policies.json)
  *   npm run ens -- enroll <approverName> <commitment>
- *   npm run ens -- revoke <approverName>           clear airlock.approver (or `unregister` the subname in the ENS app)
+ *   npm run ens -- revoke <approverName>           unregister the subname (ENS_APPROVER_REGISTRY) and clear airlock.approver
  *   npm run ens -- anchor <root>                   write airlock.auditRoot on ENS_AUDIT_NAME
  *   npm run ens -- commitment <nullifier>          what enrollment would store for a nullifier
  *
- * Env: SEPOLIA_RPC_URL, ENS_RESOLVER + ENS_PRIVATE_KEY (writes), ENS_AUDIT_NAME, COMMITMENT_SALT, ENS_UNIVERSAL_RESOLVER.
+ * Env: SEPOLIA_RPC_URL, ENS_RESOLVER + ENS_PRIVATE_KEY (writes), ENS_APPROVER_REGISTRY, ENS_AUDIT_NAME, COMMITMENT_SALT, ENS_UNIVERSAL_RESOLVER.
  */
 import { readFileSync } from "node:fs";
 import type { Hex } from "viem";
@@ -23,7 +23,7 @@ const POLICY_KEYS = ["maxClass", "egress", "models", "approverRole", "ownerRole"
 
 function writer(): EnsWriter {
   if (!env.ENS_PRIVATE_KEY || !env.ENS_RESOLVER) throw new Error("set ENS_PRIVATE_KEY and ENS_RESOLVER (your PermissionedResolver) to write");
-  return new EnsWriter(rpc, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client);
+  return new EnsWriter(rpc, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client, env.ENS_APPROVER_REGISTRY as Hex | undefined);
 }
 const need = (v: string | undefined, name: string) => v ?? (console.error(`missing <${name}>`), process.exit(2));
 const text = (name: string, key: string) => client.getEnsText({ name, key }).catch((e) => `error: ${(e as Error).message.split("\n")[0]}`);
@@ -54,10 +54,12 @@ async function main() {
       return;
     }
     case "enroll":
-      console.log(`tx ${await writer().setText(need(args[0], "approverName"), "airlock.approver", need(args[1], "commitment"))}`);
+      await new EnsRoleRegistry(client, writer()).enroll(need(args[0], "approverName"), need(args[1], "commitment"));
+      console.log(`enrolled ${args[0]}`);
       return;
     case "revoke":
-      console.log(`tx ${await writer().setText(need(args[0], "approverName"), "airlock.approver", "")}`);
+      await new EnsRoleRegistry(client, writer()).revoke(need(args[0], "approverName"));
+      console.log(`revoked ${args[0]} (subname unregistered, record cleared)`);
       return;
     case "anchor":
       console.log(`tx ${await writer().setText(auditName, "airlock.auditRoot", need(args[0], "root"))}`);

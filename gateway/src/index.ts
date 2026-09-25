@@ -37,7 +37,7 @@ const redactor = new PipelineRedactor(recognizers, (r, e) => console.warn(`[reda
 let policies: PolicyResolver, roles: RoleRegistry, writer: EnsWriter | undefined, ensMode: string;
 if (env.SEPOLIA_RPC_URL) {
   const client = ensClient(env.SEPOLIA_RPC_URL, env.ENS_UNIVERSAL_RESOLVER as Hex | undefined);
-  if (env.ENS_PRIVATE_KEY && env.ENS_RESOLVER) writer = new EnsWriter(env.SEPOLIA_RPC_URL, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client);
+  if (env.ENS_PRIVATE_KEY && env.ENS_RESOLVER) writer = new EnsWriter(env.SEPOLIA_RPC_URL, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client, env.ENS_APPROVER_REGISTRY as Hex | undefined);
   policies = new EnsPolicyResolver(client);
   roles = new EnsRoleRegistry(client, writer);
   ensMode = writer ? "sepolia (read/write)" : "sepolia (read-only)";
