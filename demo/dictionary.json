@@ -1,5 +1,21 @@
 {
-  "ORG": ["Globex Corporation", "Globex", "Initech", "Umbrella Biotech", "Acme Holdings"],
-  "PERSON": ["Hank Scorpio", "Bill Lumbergh", "Alice Chen", "Peter Gibbons"],
-  "PROJECT": ["Project Nightingale", "Operation Sandcastle"]
+  "ORG": [
+    "Globex Corporation",
+    "Globex",
+    "Initech",
+    "Umbrella Biotech",
+    "Acme Holdings",
+    "Taiwan Semiconductor Manufacturing Company",
+    "TSMC"
+  ],
+  "PERSON": [
+    "Hank Scorpio",
+    "Bill Lumbergh",
+    "Alice Chen",
+    "Peter Gibbons"
+  ],
+  "PROJECT": [
+    "Project Nightingale",
+    "Operation Sandcastle"
+  ]
 }
