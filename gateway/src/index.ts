@@ -60,6 +60,8 @@ const verifier: ProofVerifier =
         rpId: env.WORLD_RP_ID,
         signingKeyHex: env.WORLD_RP_SIGNING_KEY,
         environment: env.WORLD_ENV === "production" ? "production" : "staging",
+        proof: env.WORLD_PROOF === "legacy" ? "legacy" : "v4",
+        stagingToken: env.WORLD_STAGING_TOKEN,
       })
     : new MockVerifier();
 

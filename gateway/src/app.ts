@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { ChatMessage, Decision, RoleRegistry } from "@airlock/core";
@@ -180,6 +182,15 @@ export function buildApp(d: AppDeps) {
   app.get("/", (c) => c.redirect("/console"));
   app.get("/console", (c) => c.html(process.env.NODE_ENV === "production" ? d.consoleHtml : readFileSync(new URL("../../console/index.html", import.meta.url), "utf8")));
   app.get("/health", (c) => c.json({ ok: true }));
+
+  // IDKit browser bundle + its WASM, served from node_modules (the CDN build fails WASM init; see docs/SETUP.md).
+  const idkitDir = dirname(createRequire(import.meta.url).resolve("@worldcoin/idkit-core/hashing"));
+  const vendor = { "idkit.global.js": "text/javascript", "idkit_wasm_bg.wasm": "application/wasm" } as Record<string, string>;
+  app.get("/vendor/idkit/:file", (c) => {
+    const type = vendor[c.req.param("file")];
+    if (!type) return c.notFound();
+    return c.body(readFileSync(join(idkitDir, c.req.param("file"))), 200, { "content-type": type, "cache-control": "public, max-age=3600" });
+  });
 
   return app;
 }

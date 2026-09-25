@@ -7,7 +7,7 @@
   "exports": { ".": "./src/index.ts" },
   "dependencies": {
     "@airlock/core": "*", "@airlock/redactor": "*", "@airlock/approval": "*",
-    "@airlock/registry": "*", "@airlock/audit": "*",
+    "@airlock/registry": "*", "@airlock/audit": "*", "@worldcoin/idkit-core": "^4.3.0",
     "hono": "^4.6.0", "@hono/node-server": "^1.13.0"
   }
 }
