@@ -1,0 +1,79 @@
+# ETHGlobal Tokyo 2026: submission pack
+
+## Form fields
+
+**Project name:** Airlock
+
+**Short description** (under 100 characters):
+> Local AI by default. Frontier AI only when a verified human with an ENS role approves the exact payload.
+
+**Description:**
+> AI agents leak confidential data the moment they call a frontier model. Airlock is an OpenAI-compatible gateway that any agent (LibreChat, Hermes, Claude Code) can point at instead of a model provider. It works in six steps:
+>
+> 1. **Local by default.** Requests are answered by a local model.
+> 2. **Redact.** When an agent needs a frontier model, Airlock replaces names, companies, amounts and IDs with placeholders.
+> 3. **Attack-test.** The local model tries to re-identify the placeholders; a correct guess forces high risk.
+> 4. **Read the policy from ENS.** The agent's egress policy comes from ENSv2 records.
+> 5. **Human approval.** For confidential data, Airlock pauses the agent until a human approves through World ID for Agents. The approval is bound to the payload's hash, and the approver must hold a live ENS subname under the approver role. Revoke the subname and the approval fails.
+> 6. **Send, restore and audit.** Only the redacted text leaves, streamed. Real names are restored locally. Every decision is appended to a hash-chained audit log whose Merkle root is anchored to ENS.
+
+**How it's made:**
+> - **Gateway:** TypeScript monorepo with a Hono server that speaks the OpenAI API, including streaming. It uses a local Qwen 3.5 on vLLM (NVIDIA GB10) and a local codex-lb (`gpt-5.6-sol`) as the frontier upstream.
+> - **Redaction:** rules + company dictionary + optional Presidio + local-LLM tagging. A streaming rehydrator handles placeholders split across tokens.
+> - **World ID for Agents:** Human Continuity OIDC on the event sandbox, using the authorization code flow with PKCE. The OIDC nonce is a hash of the approval id and payloadHash. The ID token is verified in the backend against JWKS (iss, aud, nonce, auth_time), and `state` is single use.
+> - **IDKit:** World ID 4.0 Proof of Human is also supported, with the signal bound to payloadHash. It was verified with real staging proofs.
+> - **ENSv2 on Sepolia:** a script builds the whole name tree with viem: a UserRegistry per level, a PermissionedResolver, MockUSDC commit-reveal registration, and subnames with expiry. The Enhanced Access Control split lets only a security account change policy records, while the gateway may write only `airlock.approver` and `airlock.auditRoot`.
+> - **Design finding:** only leaf names get a resolver. Otherwise the wildcard lookup of the name-keyed resolver lets unregistered approvers keep resolving.
+> - **Console:** a single HTML page with the chamber view, hold-to-approve, linked redaction view, ledger and a live ENS panel.
+> - **Tests:** 17 unit tests, including OIDC against a mock IdP, plus end-to-end runs against the real World sandbox and Sepolia.
+
+**Links:**
+- GitHub: https://github.com/cheng-chun-yuan/airlock
+- Live demo: https://soil-foods-jam-conflicts.trycloudflare.com/console?token=<AIRLOCK_ACCESS_TOKEN>. Put the real token in the form, not in git. Rotate it after judging.
+- ENS: https://app.ens.dev/airlock.eth
+
+## Tracks
+
+### World: Best Use of World ID for Agents
+| Requirement | Where |
+|---|---|
+| Official World ID for Agents on the event dev environment | `sandbox.auth.world.org` OIDC ([approval/src/oidc.ts](../approval/src/oidc.ts)) |
+| Full journey: request → user completes → validated → protected action | Queue → *World ID for Agents* → hold → World → `/oidc/callback` → egress. Verified against the real sandbox |
+| Denied / cancelled / expired path where the action doesn't happen | cancel (`access_denied`), timeout, no role, revoked role, replayed callback; all audited, nothing sent |
+| Secure backend validation, no client secrets | token exchange + JWKS verification in the gateway; the secret lives only in `.env` |
+| Integration debrief | README → *Integration debrief* |
+
+### ENS: Best Use of ENSv2
+| Requirement | Where |
+|---|---|
+| Built on ENSv2 (Sepolia) | `airlock.eth`; contracts and txs in the README |
+| ENSv2 central, not cosmetic | policy engine (agent records), role registry (subname under role, expiry, unregister = revoke), EAC write split, audit anchor |
+| Functional, not hardcoded | every request reads ENS live; the Console's ENS tab reads it live; changing `airlock.models` on-chain changes behaviour |
+| Live demo link | tunnel URL above |
+| Open source | GitHub |
+| Bonus: AI agents | each agent *is* an ENS name whose records are its egress policy |
+
+## Demo video (≈3 min)
+
+| Time | Show | Say |
+|---|---|---|
+| 0:00 | Title slide / README | "Agents leak data the moment they call a frontier model. Airlock is the airlock between them." |
+| 0:15 | Try it → *Public question* | "Public data goes straight out, but it's still audited." (trace: `decision auto`, *left the building*) |
+| 0:30 | Try it → *Confidential contract* → Queue | "Confidential data stops at the door." Show the **chamber**, hover `ORG·1` ↔ "Globex Corporation": "This mapping never leaves the box." |
+| 0:55 | Queue → *World ID for Agents*, name `alice.legal.approvers.airlock.eth`, **hold** | "A tap does nothing; you hold to open the outer door." World sign-in → back → stamp **CLEARED**, outer door opens. |
+| 1:15 | Try it → the answer streams | "The model only saw placeholders; real names are restored locally." |
+| 1:30 | Send the same request, then **cancel** at World (or Seal) | Stamp **SEALED**: "Nothing was sent; the local model answered instead." |
+| 1:45 | Terminal: `npm run ens -- revoke carol.legal.approvers.airlock.eth`, then approve as carol | "A verified human, but her ENS role is gone → **ROLE FAIL**. Revocation is one unregister." |
+| 2:10 | ENS tab | "The agent's policy *is* its ENS records. Only the security key can change them; the gateway can only write approvers and the audit root. That's ENSv2 Enhanced Access Control per record key." |
+| 2:35 | Ledger → *Walk the chain* → *Anchor now* | "Every decision is hash-chained, and the Merkle root is anchored to `audit.airlock.eth`. It matches." |
+| 2:50 | Try it → *Re-identifiable* | "Redaction isn't enough if context gives it away. Our local model attacks the redacted text first; here it guessed TSMC, so this needs the data owner." |
+| 3:00 | End card | "Local AI by default. Frontier AI by human consent. Accountability on-chain." |
+
+## Pre-demo checklist
+- [ ] `docker ps` shows `airlock-tunnel` and `codex-lb` up; `curl localhost:8000/v1/models` (vLLM) answers.
+- [ ] Gateway up: `npm start` (the Console header says `world id worldid + agents · ens sepolia (read/write)`).
+- [ ] The tunnel URL is unchanged. If it changed, update the OIDC redirect URI in the World portal and `PUBLIC_URL` / `WORLD_OIDC_REDIRECT_URI` in `.env`.
+- [ ] `carol.legal.approvers.airlock.eth` exists before the revoke scene: `npm run ens -- enroll carol.legal.approvers.airlock.eth 0x01`.
+- [ ] For IDKit only: the staging window is open. It expires 24h after opening; reopen it via the Portal MCP `set_world_id_staging_verification`.
+- [ ] Fresh ledger for recording: stop the gateway, `rm data/audit.jsonl`, start it, then *Anchor now* at the end.
+- [ ] After judging: rotate `AIRLOCK_ACCESS_TOKEN`, the World OIDC client secret, the RP signing key and the Portal team API key.
