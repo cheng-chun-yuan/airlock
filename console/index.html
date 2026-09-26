@@ -256,7 +256,8 @@
       <p class="eyebrow">Enroll an approver</p>
       <h2 style="font:500 22px var(--display); margin:0 0 6px">Bind a World ID to an ENS approver name</h2>
       <p class="muted" style="margin:0 0 16px">The approver proves they're human once. The gateway stores <span class="mono">commitment(nullifier)</span>, never the nullifier, under <span class="mono">airlock.approver</span> of their name. Approvals later use the same World ID action, so the same person yields the same commitment.</p>
-      <div style="display:flex; gap:8px"><input class="field" id="enrollName" placeholder="bob.legal.approvers.acme.eth" style="flex:1" /><button class="btn dark" id="enrollGo">Enroll with World ID</button></div>
+      <div style="display:flex; gap:8px"><input class="field" id="enrollName" placeholder="bob.legal.approvers.airlock.eth" style="flex:1" /><button class="btn dark" id="enrollGo">Enroll with World ID</button></div>
+      <div id="enrollVia"></div>
       <div id="enrollQr" style="margin-top:14px; display:flex; gap:14px; align-items:center"></div>
       <pre class="out" id="enrollOut" style="margin-top:12px"></pre>
     </div>
@@ -289,7 +290,10 @@ const short = (agent) => String(agent ?? "").replace(/\.agents\..*$/, "");
 const clock = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const WORD = { pending:"held", approved:"cleared", denied:"sealed", expired:"expired", role_invalid:"role fail", proof_invalid:"proof fail" };
 
-let cfg = {}, items = [], selected = null, current = null, lastStatus = {}, seen = new Set(), view = "split", who = null;
+let cfg = {}, items = [], selected = null, current = null, lastStatus = {}, seen = new Set(), view = "split", who = null, via = null;
+const viaToggle = () => cfg.worldIdAgents && cfg.worldIdMode !== "mock"
+  ? `<div class="seg" style="margin-top:8px">${[["oidc", "World ID for Agents"], ["idkit", "IDKit"]].map(([k, l]) => `<button data-via="${k}" class="${via === k ? "on" : ""}">${l}</button>`).join("")}</div>` : "";
+const wireVia = (root) => $$("[data-via]", root).forEach((b) => (b.onclick = () => { via = b.dataset.via; $$("[data-via]", root).forEach((x) => x.classList.toggle("on", x === b)); }));
 
 /* ---------- tabs ---------- */
 function tab(name) {
@@ -409,7 +413,7 @@ function decideHTML(r) {
   if (cfg.worldIdMode === "mock" && !who) who = people[0];
   const whoHTML = cfg.worldIdMode === "mock"
     ? `<label class="eyebrow" style="margin:0">Approving as <span class="muted">(mock World ID)</span></label><div class="opts">${people.map((p, i) => `<button data-i="${i}" class="${who && who.name === p.name ? "on" : ""}">${esc(p.name.split(".")[0])}<span class="muted">.${esc(p.name.split(".").slice(1).join("."))}</span></button>`).join("")}</div>`
-    : `<label class="eyebrow" style="margin:0">Your ENS name</label><input id="approverName" placeholder="alice.${esc(r.requiredRole)}" />`;
+    : `<label class="eyebrow" style="margin:0">Your ENS name</label><input id="approverName" placeholder="alice.${esc(r.requiredRole)}" />${viaToggle()}`;
   return `<div class="decide"><div class="who">${whoHTML}</div>
     <div class="actions"><button class="seal" id="seal">Seal</button><button class="hold" id="hold"><i class="fill"></i><span>Hold to open outer door</span></button></div></div>
     <div id="qr"></div><div class="out" id="out"></div>`;
@@ -431,6 +435,7 @@ function wireDetail(r) {
   if (r.status !== "pending") return;
   $$(".who .opts button").forEach((b) => (b.onclick = () => { who = cfg.mockApprovers[+b.dataset.i]; $$(".who .opts button").forEach((x) => x.classList.toggle("on", x === b)); }));
   $("#seal").onclick = async () => { sealFlash(); await post(`/approvals/${r.id}/deny`, { reason:"sealed by reviewer" }); };
+  wireVia($("#detail"));
   holdToConfirm($("#hold"), 1100, () => approve(r));
 }
 
@@ -452,6 +457,11 @@ function holdToConfirm(btn, ms, done) {
 
 async function approve(r) {
   const out = $("#out");
+  if (cfg.worldIdAgents && cfg.worldIdMode !== "mock" && via === "oidc") {
+    // World ID for Agents: hand off to World's Human Continuity sign-in; the callback resolves this approval.
+    location.href = `/approvals/${r.id}/oidc?approverName=${encodeURIComponent($("#approverName").value.trim())}`;
+    return;
+  }
   if (cfg.worldIdMode === "mock") {
     const d = await post(`/approvals/${r.id}/verify`, { mock:true, nullifier:who.nullifier, approverName:who.name });
     out.textContent = d.status === "approved" ? "" : `${d.status}: ${d.reason ?? ""}`;
@@ -600,6 +610,7 @@ $("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.me
 $("#enrollGo").onclick = async () => {
   const name = $("#enrollName").value.trim(), out = $("#enrollOut");
   if (!name) { out.textContent = "Enter the approver's ENS name first."; return; }
+  if (cfg.worldIdAgents && cfg.worldIdMode !== "mock" && via === "oidc") { location.href = `/enroll/oidc?approverName=${encodeURIComponent(name)}`; return; }
   let proof;
   try {
     if (cfg.worldIdMode === "mock") {
@@ -637,7 +648,9 @@ function tick(decision) {
 
 (async () => {
   cfg = await j("/config");
-  $("#mode").textContent = `world id ${cfg.worldIdMode} · ens ${cfg.ensMode}`;
+  $("#mode").textContent = `world id ${cfg.worldIdMode}${cfg.worldIdAgents ? " + agents" : ""} · ens ${cfg.ensMode}`;
+  via = cfg.worldIdAgents ? "oidc" : "idkit";
+  $("#enrollVia").innerHTML = viaToggle(); wireVia($("#enrollVia"));
   const models = (await j("/v1/models")).data.map((m) => m.id);
   cfg.localModel = (models.find((m) => m.startsWith("local/")) ?? "local/").slice(6);
   $("#model").innerHTML = models.map((m) => `<option>${esc(m)}</option>`).join("");
