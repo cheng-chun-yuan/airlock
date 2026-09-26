@@ -843,6 +843,9 @@ function holdToConfirm(btn, ms, done) {
 }
 
 let worldidPopup = null;
+let qrGen = 0; // bumped by each new World ID QR, so a replaced (stale) request's poll result is ignored
+/** "New code" under a World ID QR: issues a fresh request when the old one expired or was lost. */
+const newCodeBtn = (box, again) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = "New code"; b.onclick = again; box.append(b); };
 /** One approve path for Queue and Demo. World ID for Agents opens in a popup so the agent's stream keeps running. */
 async function approveVia(r, name, ui) {
   const out = ui.out, say = (t) => out && (out.textContent = t);
@@ -867,9 +870,11 @@ async function approveVia(r, name, ui) {
     const action_description = `Release ${n} de-identified field${n === 1 ? "" : "s"} from ${short(r.agent)} to ${r.targetModel}`;
     const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, action_description, rp_context:ctx.rp_context, allow_legacy_proofs:!!ctx.allow_legacy_proofs, environment:ctx.environment }).preset(IDKit[ctx.preset ?? "proofOfHuman"]({ signal:ctx.signal }));
     const qr = qrcode(0, "M"); qr.addData(req.connectorURI); qr.make();
-    if (ui.qr) ui.qr.innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App.<br/>The proof is bound to this exact payload.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
+    const gen = ++qrGen;
+    if (ui.qr) { ui.qr.innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App.<br/>The proof is bound to this exact payload.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`; newCodeBtn(ui.qr, () => approve(r)); }
     say("Waiting for World App…");
     const res = await req.pollUntilCompletion({ timeout:120000 });
+    if (gen !== qrGen) return; // replaced by "New code"
     if (!res.success) return "World ID: " + res.error;
     const d = await post(`/approvals/${r.id}/verify`, { ...res.result, approverName:name });
     return grantMsg(d);
@@ -1246,8 +1251,11 @@ async function enrollAs(name, out, qrBox) {
       const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, action_description:`Become an Airlock approver: ${name}`, rp_context:ctx.rp_context, allow_legacy_proofs:!!ctx.allow_legacy_proofs, environment:ctx.environment }).preset(IDKit[ctx.preset ?? "proofOfHuman"]({ signal:ctx.signal }));
       const qr = qrcode(0, "M"); qr.addData(req.connectorURI); qr.make();
       qrBox.innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App${ctx.environment === "staging" ? " or paste the link into simulator.worldcoin.org" : ""}.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
+      const gen = ++qrGen;
+      newCodeBtn(qrBox, () => enrollAs(name, out, qrBox));
       out.textContent = "Waiting for World App…";
       const res = await req.pollUntilCompletion({ timeout:180000 });
+      if (gen !== qrGen) return;
       if (!res.success) { out.textContent = "World ID: " + res.error; return; }
       proof = res.result;
     }
