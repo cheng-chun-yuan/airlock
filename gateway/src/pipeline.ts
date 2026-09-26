@@ -61,6 +61,15 @@ export interface Streamed {
 
 type Draft = Omit<AuditRecord, "seq" | "prevHash" | "timestamp" | "hash" | "gatewaySig">;
 
+export interface RequestOpts {
+  sessionId?: string;
+  agent?: string;
+  extra?: Record<string, unknown>;
+  /** Requesting employee (x-airlock-user) and their business justification (x-airlock-justification). */
+  user?: string;
+  justification?: string;
+}
+
 /** What to do once all checks ran; executed either as one completion or as a stream. */
 type Plan =
   | { kind: "local"; meta: AirlockMeta; model: string }
@@ -98,7 +107,7 @@ export class Pipeline {
   }
 
   /** Non-streaming entry point. */
-  async handle(model: string, messages: ChatMessage[], opts: { sessionId?: string; agent?: string; extra?: Record<string, unknown> }): Promise<Result> {
+  async handle(model: string, messages: ChatMessage[], opts: RequestOpts): Promise<Result> {
     const plan = await this.plan(model, messages, opts);
     const { d } = this;
     switch (plan.kind) {
@@ -127,7 +136,7 @@ export class Pipeline {
   }
 
   /** Streaming entry point: all checks (and any approval) finish before the first byte is sent. */
-  async stream(model: string, messages: ChatMessage[], opts: { sessionId?: string; agent?: string; extra?: Record<string, unknown>; signal?: AbortSignal }): Promise<Streamed> {
+  async stream(model: string, messages: ChatMessage[], opts: RequestOpts & { signal?: AbortSignal }): Promise<Streamed> {
     const { signal } = opts;
     const plan = await this.plan(model, messages, opts);
     const { d } = this;
@@ -217,23 +226,24 @@ export class Pipeline {
   }
 
   /** Router: dispatch on the `model` field. */
-  private async plan(model: string, messages: ChatMessage[], opts: { sessionId?: string; agent?: string; extra?: Record<string, unknown> }): Promise<Plan> {
+  private async plan(model: string, messages: ChatMessage[], opts: RequestOpts): Promise<Plan> {
     const sessionId = opts.sessionId ?? randomUUID();
     const localMeta = (): AirlockMeta => ({ requestId: randomUUID(), sessionId, route: "local", decision: "local", egressed: false });
     if (model === "auto") {
       const localAnswer = await this.d.local.complete(messages, opts.extra);
       const text = localAnswer.message.content ?? "";
       if (text.trim() && !UNSURE.test(text) && localAnswer.finishReason !== "length") return { kind: "answered", meta: localMeta(), completion: localAnswer };
-      const p = await this.airlock(this.d.defaultClaudeModel, messages, sessionId, opts.agent);
+      const p = await this.airlock(this.d.defaultClaudeModel, messages, sessionId, opts);
       if (p.kind === "egress") p.meta.route = "escalated";
       return p;
     }
-    if (model.startsWith("airlock/")) return this.airlock(model.slice("airlock/".length), messages, sessionId, opts.agent);
+    if (model.startsWith("airlock/")) return this.airlock(model.slice("airlock/".length), messages, sessionId, opts);
     // local/* (and anything unknown) stays on the box
     return { kind: "local", meta: localMeta(), model: `local/${this.d.local.model}` };
   }
 
-  private async airlock(targetModel: string, messages: ChatMessage[], sessionId: string, agentId?: string): Promise<Plan> {
+  private async airlock(targetModel: string, messages: ChatMessage[], sessionId: string, opts: RequestOpts): Promise<Plan> {
+    const agentId = opts.agent;
     const { d } = this;
     const requestId = randomUUID();
     const session = sessionFor(sessionId);
@@ -247,7 +257,8 @@ export class Pipeline {
     const meta: AirlockMeta = { requestId, sessionId, route: route.kind, decision: "", sourceClass: red.sourceClass, entities: red.entities, risk, egressed: false };
     d.approvals.emitEvent({ type: "request.routed", requestId, route: route.kind, reason: route.kind === "block" ? route.reason : undefined });
 
-    const base = { requestId, sourceHash, payloadHash, targetModel, agent: policy.agent };
+    const deidentified = Object.values(red.entities).reduce((a, b) => a + b, 0);
+    const base = { requestId, sourceHash, payloadHash, targetModel, agent: policy.agent, requester: opts.user, deidentified };
     const fallback = (decision: "denied" | "expired" | "blocked", reason: string, extra: Partial<Decision> = {}, viewHash?: string): Plan => {
       this.record({
         ...base,
@@ -324,6 +335,8 @@ export class Pipeline {
       riskLevel: risk.level,
       findings: risk.findings,
       targetModel,
+      requester: opts.user,
+      justification: opts.justification,
       createdAt: Date.now(),
       expiresAt: Date.now() + d.approvalTimeoutMs,
       status: "pending" as const,

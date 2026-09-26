@@ -76,7 +76,19 @@ export function buildApp(d: AppDeps) {
     const { model = "auto", messages, stream, ...rest } = body as { model?: string; messages: ChatMessage[]; stream?: boolean };
     const extra: Record<string, unknown> = {};
     for (const k of ["temperature", "top_p", "max_tokens", "tools", "tool_choice", "stop"]) if (k in rest) extra[k] = (rest as any)[k];
-    const opts = { sessionId: c.req.header("x-airlock-session") ?? undefined, agent: c.req.header("x-airlock-agent") ?? undefined, extra };
+    // Headers are ASCII-only, so free text (names, justification in any language) arrives URI-encoded.
+    const text = (h: string) => {
+      const v = c.req.header(h);
+      if (!v) return undefined;
+      try { return decodeURIComponent(v).slice(0, 500); } catch { return v.slice(0, 500); }
+    };
+    const opts = {
+      sessionId: c.req.header("x-airlock-session") ?? undefined,
+      agent: c.req.header("x-airlock-agent") ?? undefined,
+      user: text("x-airlock-user"),
+      justification: text("x-airlock-justification"),
+      extra,
+    };
     const created = Math.floor(Date.now() / 1000);
 
     // Real token streaming. Requests with tools use the buffered path below (tool-call deltas aren't streamed yet).
@@ -158,6 +170,12 @@ export function buildApp(d: AppDeps) {
     }
     d.approvals.resolve(req.id, decision);
     return c.json(decision, decision.status === "approved" ? 200 : 403);
+  });
+
+  // The requester changes their mind before anyone approved: nothing is sent.
+  app.post("/approvals/:id/withdraw", async (c) => {
+    const ok = d.approvals.resolve(c.req.param("id"), { status: "denied", reason: "withdrawn by requester", worldIdVerified: false });
+    return ok ? c.json({ ok }) : c.json({ error: "not pending" }, 409);
   });
 
   app.post("/approvals/:id/deny", async (c) => {

@@ -75,6 +75,9 @@ export interface ApprovalRequest {
   originalPreview?: string;
   /** Placeholder -> real value, local-only: lets the Console link redacted chips to the original text. */
   mapping?: Record<string, string>;
+  /** Who asked (x-airlock-user) and why they need a frontier model (x-airlock-justification). */
+  requester?: string;
+  justification?: string;
 }
 
 export interface Decision {
@@ -112,6 +115,9 @@ export interface AuditRecord {
   usage?: { promptTokens: number; completionTokens: number };
   /** Set when this egress rode on an earlier approval in the same session (approval scope). */
   scopeOf?: string;
+  /** Who asked, and how many fields were de-identified (counts only, never values). */
+  requester?: string;
+  deidentified?: number;
   timestamp: number;
   hash: string;
   gatewaySig: string;
