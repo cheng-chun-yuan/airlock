@@ -3,7 +3,7 @@
  *
  *   npm run ens -- check <agent> [approverName]    read policy, approver and audit records
  *   npm run ens -- set-policy <agent> [file]       write airlock.* policy records (default demo/policies.json)
- *   npm run ens -- enroll <approverName> <commitment>
+ *   (enroll approvers in the Console → Approvers: it requires a World ID proof; there is no CLI shortcut)
  *   npm run ens -- revoke <approverName>           unregister the subname (ENS_APPROVER_REGISTRY) and clear airlock.approver
  *   npm run ens -- anchor <root>                   write airlock.auditRoot on ENS_AUDIT_NAME
  *   npm run ens -- set <name> <key> <value>        write any text record (e.g. airlock.models)
@@ -59,10 +59,6 @@ async function main() {
         if (p[k] !== undefined) console.log(`airlock.${k} = ${p[k]}  tx ${await w.setText(agent, `airlock.${k}`, String(p[k]))}`);
       return;
     }
-    case "enroll":
-      await new EnsRoleRegistry(client, writer()).enroll(need(args[0], "approverName"), need(args[1], "commitment"));
-      console.log(`enrolled ${args[0]}`);
-      return;
     case "revoke":
       await new EnsRoleRegistry(client, writer()).revoke(need(args[0], "approverName"));
       console.log(`revoked ${args[0]} (subname unregistered, record cleared)`);
