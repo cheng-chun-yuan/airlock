@@ -23,8 +23,8 @@ agent ──OpenAI API──▶  Router → Redactor → Risk (local attack test
        restored locally      never leaves the box            (human approval)      (sees placeholders only)
 ```
 
-1. **Redact.** Names, companies, amounts, emails and IDs become stable placeholders (`<ORG_1>`) within a session. The mapping never leaves the gateway.
-2. **Attack-test.** The local model tries to re-identify the placeholders. A correct guess is a measured leak and forces high risk.
+1. **De-identify.** Names, companies, amounts, emails and IDs become stable labels (`<ORG_1>`) within a session. The mapping never leaves the gateway.
+2. **Re-identification test.** The local model plays attacker and tries to work out who each label is. A correct guess is a measured leak and forces high risk.
 3. **Decide.** The agent's policy is read live from ENS: `public/internal` → send; `confidential` → human approval; `restricted` → never leaves.
 4. **Approve.** A verified human (World ID) whose ENS approver subname is live signs off on **this payload's hash**. Revoke the subname and they can't approve.
 5. **Egress + rehydrate.** Only the redacted text goes out, streamed. Real names are put back locally, including in tool-call arguments.
@@ -39,10 +39,10 @@ Open the live demo. It lands on **Demo**: a 6-scene stepper, with the **agent** 
 | # | Scene | What happens |
 |---|---|---|
 | 01 | Public | Nothing sensitive → sent automatically, still audited. |
-| 02 | Confidential | Redacted (hover a chip to see the real value, which stays local) → **held** → *World ID for Agents* → **hold** to approve → the answer streams back with real names. |
+| 02 | Confidential | **De-identified**: names become labels like `ORG·1` (shown readable for you; flip to *As the model sees it*) → **held** → *World ID for Agents* → **hold** to approve → the answer streams back with the real names. |
 | 03 | Seal | Same request, sealed → the frontier model never sees it; the local model answers. |
 | 04 | Revoked | **Revoke carol on ENS** (Sepolia tx) → carol is a verified human but her role is gone → **role check failed**, nothing sent. |
-| 05 | Re-identified | The name is redacted, but the context gives it away → the local attack test catches it → **high risk**, data-owner role required. |
+| 05 | Re-identification test | TSMC is de-identified, but the context gives it away → the local model re-identifies it → **high risk**, data-owner role required. |
 | 06 | Proof | **ENS** tab (live policy, who may write which record key, audit anchor) · **Walk the chain** · **Anchor to ENS**. |
 
 Other tabs: **Queue** (every held request with the full airlock chamber), **Ledger** (hash chain), **ENS** (live ENSv2 state, plus approver enroll and lookup).
