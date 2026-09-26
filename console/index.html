@@ -562,7 +562,7 @@
     </div>
     <div class="ens-grid">
       <div class="panel" id="ensAgentsPanel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" id="ensAgentsNote" style="margin:-4px 0 10px; font-size:13px">Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.</p><div id="ensAgents"></div></div>
-      <div class="panel"><h3>Policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the egress policy. Change one on-chain (Settings, or any ENS app with the owner's wallet) and the next request obeys it.</p><div id="ensPolicy"></div></div>
+      <div class="panel"><h3>Policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the egress policy. Change one on-chain (Manage › Models, or any ENS app with the owner's wallet) and the next request obeys it.</p><div id="ensPolicy"></div></div>
       <div class="panel"><h3>Who may change what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (read from the live contract).</p><div id="ensAccess"></div></div>
       <div class="panel"><h3>Audit anchor</h3><div id="ensAudit"></div></div>
       <div class="panel"><h3>Name tree</h3><pre class="tree" id="ensTree"></pre></div>
@@ -1018,6 +1018,7 @@ async function loadEns() {
     $("#ensTree").innerHTML = [
       `${ensApp(cfg.org)}   ← owned by the gateway's creator`,
       `├─ ${ensApp(cfg.defaultAgent)}   ← this policy (every request reads it live)`,
+      `├─ ${ensApp(cfg.org.replace(/^/, "agents."))}   ← wildcard: <agent>.agents.… follows the default or a linked named policy`,
       `├─ ${ensApp(cfg.approverRole)}   ← approver role`,
       `│   └─ <name>.${esc(cfg.approverRole)}   ← one subname per enrolled approver`,
       `└─ ${ensApp(a.name)}   ← audit anchor`,
@@ -1397,7 +1398,7 @@ async function enterGateway(slug) {
   if (!isDemo()) $("#myAgent").textContent = cfg.me?.agent ?? "gateway default";
   $("#apDemo").hidden = !isDemo(); $("#teamBody").hidden = isDemo();
   $("#ensAgentsPanel").hidden = !isDemo() && !(cfg.agents ?? []).length; // one policy and no agents: nothing to compare
-  $("#ens-eyebrow") && ($("#ens-eyebrow").textContent = isDemo() ? "Agents & policy · ENSv2 · read live" : "Policy · ENSv2 · read live");
+  $("#ens-eyebrow") && ($("#ens-eyebrow").textContent = "Agents & policy · ENSv2 · read live");
   paintBanner();
   const agents = isDemo() ? [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")] : [cfg.defaultAgent, ...(cfg.agents ?? []).map((a) => a.name)];
   $("#demoAgent").innerHTML = agents.map((a) => `<option value="${esc(a)}">${esc(short(a))}</option>`).join("");
@@ -1699,7 +1700,8 @@ async function paintBanner() {
   else if (canApprove()) {
     const team = await j(`/api/gateways/${GW}/members`);
     const mine = Array.isArray(team) && team.find((m) => m.address === cfg.me.address);
-    if (mine && !mine.enrolled) html = `<div class="banner">You can approve requests here once you verify with World ID. It's one scan, and your approver name <span class="mono">${esc(mine.approverName)}</span> goes on ENS. <button class="btn dark" id="bnEnroll">Enroll now</button></div>`;
+    // The Get started checklist already asks for this; the banner takes over once that card is dismissed.
+    if (mine && !mine.enrolled && startDismissed()) html = `<div class="banner">You can approve requests here once you verify with World ID. It's one scan, and your approver name <span class="mono">${esc(mine.approverName)}</span> goes on ENS. <button class="btn dark" id="bnEnroll">Enroll now</button></div>`;
   }
   $("#gwBanner").innerHTML = html;
   $("#bnRetry") && ($("#bnRetry").onclick = async () => { await post(`/api/gateways/${GW}/provision`); paintBanner(); });

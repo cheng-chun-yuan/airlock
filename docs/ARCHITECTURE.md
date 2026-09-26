@@ -34,6 +34,8 @@
 
 **信任邊界**：只有 Egress 模組能連到外部。對照表、原文和日誌都不會離開本地。
 
+**多租戶**：同一台伺服器上跑多個 gateway。每個人用錢包登入（SIWE，domain = `PUBLIC_URL` 的 host），沒有共用的 access token。原本用環境變數設定的那一套（`airlock.eth`、`contract-agent`、`legal.approvers`、alice/bob）現在是共用的 **demo gateway**（`/console/demo`）；其他人可以自己建立 gateway，各自有 ENS 名稱、模型、成員和 API key（見 §4.1、§7）。World ID 只用在核可者身上：註冊一次，之後每次核可都驗證。
+
 ## 2. 請求流程
 
 1. **Router**：依照 `model` 欄位分流
@@ -90,6 +92,27 @@ acme.eth
 
 **隱私**：鏈上只放 commitment，不放 nullifier，也不放任何內容。
 
+### 4.1 自助建立的 gateway
+
+任何登入的人都能建立 gateway，它會變成 Sepolia 上的 `<slug>.airlock.eth`，擁有自己的 PermissionedResolver 和 registries：
+
+```
+<slug>.airlock.eth                 owner = 建立者的錢包，自己的 registry，沒有 resolver
+├─ policy.<slug>                   gateway 政策 records（maxClass / egress / models / approverRole / highRiskQuorum）
+│   └─ <p>.policy.<slug>           具名政策
+├─ agents.<slug>                   wildcard：每個 <agent>.agents.<slug> 都解析得到
+│   └─ <agent>.agents.<slug>       沒有自己的 record → 走 default record（連到 policy.<slug>）；
+│                                  或 linkToNode → <p>.policy.<slug>（改一次，連過去的 agent 全部跟著變）
+├─ approvers.<slug>                核可者角色（自己的 registry，沒有 resolver）
+│   └─ <name>.approvers.<slug>     airlock.approver = commitment（核可者註冊時建立）
+└─ audit.<slug>                    airlock.auditRoot
+```
+
+- **建立流程**：11 個步驟（deploy resolver / registry / approver registry → register name / policy / approvers / audit / agents → write policy → hand over policy → hand over registry）。每一步完成就記錄下來，重跑或重啟時會跳過，可以從中斷處繼續。
+- **交接**：建好之後，平台的 key 只保留 resolver 上 `airlock.approver` 和 `airlock.auditRoot` 的 `ROLE_SET_TEXT`（用來註冊核可者、錨定稽核），`<slug>.airlock.eth` 的 registry 上的角色全部放掉（所以不能把 `policy.<slug>` 改指到平台控制的 resolver）；只保留 approvers registry 的角色，用來註冊和撤銷核可者名稱。之後改政策、把 agent 連到具名政策，都是擁有者錢包簽的交易，伺服器從 receipt 確認寫入正確才存檔。
+- **平台還能做的事**：平台控制 `airlock.eth`，所以理論上可以把 `<slug>.airlock.eth` 收回（指到別處），但不能改寫它底下的政策。
+- **Agent**：管理員為每個成員指派一個 agent，成員送出的所有請求（任何 API key 或 Playground）都依那個 agent 的 ENS 政策；成員不能自己換。管理員也可以建立綁定特定 agent 的 service key。
+
 ## 5. 資料模型
 
 **ApprovalRequest**
@@ -139,8 +162,14 @@ interface AuditSink      { append(rec: AuditRecord); anchor(): Promise<string> }
 ## 7. API
 
 **Gateway（對客戶端）**
-- `POST /v1/chat/completions`：OpenAI 相容，可選 `x-airlock-session` header
+- `POST /v1/chat/completions`：OpenAI 相容，需要 `Authorization: Bearer alk_…`（每個成員自己的 API key），可選 `x-airlock-session` header
 - `GET /v1/models`：列出 `local/*`、`airlock/*`、`auto`
+- API key 本身就決定 gateway、身分和 agent；在使用者的 gateway 上，client 送來的 `x-airlock-user` / `x-airlock-agent` 會被忽略。demo gateway 不發 API key，只能用 Playground。
+
+**平台（Console 用，session cookie）**
+- `POST /api/auth/nonce`、`POST /api/auth/verify`：SIWE 登入
+- `POST /api/gateways`：建立 gateway（開始上鏈建立）；`/api/gateways/:slug/members`、`/invites`（一次性邀請連結）、`/keys`、`/agents`、`/policies/:label`
+- `/g/:slug/*`：進入某個 gateway 的 API，依成員角色（admin / approver / member）檢查權限；核可者只能用自己的 ENS 名稱核可
 
 **Approval（對 Console 和核可者）**
 - `GET /approvals?status=pending`
@@ -157,6 +186,8 @@ interface AuditSink      { append(rec: AuditRecord); anchor(): Promise<string> }
 1. **Queue**：待核可的請求、自動放行和阻擋的紀錄
 2. **Request detail**：原文和去敏版本並排、遮蔽的實體、風險發現、ENS 政策、World ID QR code
 3. **Audit**：日誌列表、hash chain 驗證狀態、最新 Merkle root 和 ENS 連結
+
+（實際上線的分頁：Overview、Approvals、Playground、Policy、Members、Audit、Connect，管理員另有 Settings。）
 
 ## 9. Repo 結構和部署
 
@@ -221,4 +252,10 @@ airlock/
 | Console | ✅ 單一 HTML（由 gateway 提供），未改用 Next.js |
 | LibreChat | 提供設定片段 `demo/librechat.yaml`，未改動本機運行中的 LibreChat |
 | Hermes | 依砍功能順序未做；可用 `skills/airlock/SKILL.md` 接入 |
+| 登入 | ✅ 錢包登入（SIWE），不再有共用 access token；World ID 只用於核可者 |
+| demo gateway | ✅ 原本的環境變數設定變成共用 demo（`/console/demo`）：每個登入者都能扮演所有角色；只有 Playground、不發 API key、每人每小時 20 次 chat |
+| 自助 gateway | ✅ `<slug>.airlock.eth`，11 步可續跑的上鏈建立，建好後交接給擁有者錢包 |
+| 成員與 API key | ✅ 角色 admin / approver / member、一次性邀請連結、每個成員的 API key（`alk_…`）；移除成員會刪掉他的 key 並撤銷核可者名稱 |
+| Agent 與具名政策 | ✅ `<agent>.agents.<slug>`、`<p>.policy.<slug>`；管理員為成員指派 agent |
+| 每個 gateway 的模型 | ✅ 本地：Airlock 提供的或自己的 OpenAI 相容 URL（預設只接受公開位址，`ALLOW_PRIVATE_UPSTREAMS=1` 才放行內網；筆電可用 tunnel）；前沿：Anthropic 或 OpenAI 相容，用 gateway 自己的 key（AES-GCM 加密保存） |
 

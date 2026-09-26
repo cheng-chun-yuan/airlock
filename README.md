@@ -89,10 +89,10 @@ Open <https://airlock.polyoctant.com> and sign in with your wallet. Open **Airlo
 | **Overview** | Live health of every dependency (local model, frontier upstream, World ID, ENS, MultiBaas), today's decisions, and anything waiting for a human. |
 | **Playground** | Pick an example. *Public question* goes straight out. *Contract review* is **de-identified** (names become labels like `ORG·1`; you read the names, the model only gets the labels) and **held** until a legal approver verifies with World ID. *Client pricing* is caught by the local re-identification test → high risk → the ENS policy needs **two different humans**; the same World ID under another name is refused. Switch the agent to `intern-bot` (never registered): ENSv2 wildcard gives it the org default, and confidential data is blocked. |
 | **Approvals** | The reviewer's inbox: who asks, why, the de-identified text, risk, and the quorum. **Hold** the button (a tap does nothing), then verify with *World ID for Agents* or *World App QR*. **Seal** denies with a note; the local model answers instead. |
-| **Agents** | Live ENSv2 state: each agent's policy and where it comes from (🔗 linked shared record or ✳︎ wildcard default), the per-record write-access matrix, the audit anchor and the name tree. |
-| **Approvers** | The directory with live ENS status. **Enroll** only through World ID (the subname is created on-chain and holds a commitment, never an identity). **Revoke** unregisters the subname in one Sepolia tx; MultiBaas pushes it to the gateway at once. |
+| **Manage › Agents & policy** | Live ENSv2 state: each agent's policy and where it comes from (🔗 linked shared record or ✳︎ wildcard default), the per-record write-access matrix, the audit anchor and the name tree. |
+| **Manage › Approvers** | The directory with live ENS status. **Enroll** only through World ID (the subname is created on-chain and holds a commitment, never an identity). **Revoke** unregisters the subname in one Sepolia tx; MultiBaas pushes it to the gateway at once. |
 | **Audit** | The hash-chained ledger: **Verify chain**, **Anchor to ENS**, export CSV/JSON, plus every on-chain policy change indexed by MultiBaas. |
-| **Connect** | Base URL, headers and copy-paste snippets (curl, Python, LibreChat) to point real agents at Airlock. |
+| **Manage › Connect** | Base URL, headers and copy-paste snippets (curl, Python, LibreChat) to point real agents at Airlock. |
 
 ### Built for the people who use it
 | Who | What they get |
