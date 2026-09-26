@@ -81,6 +81,7 @@ export interface Decision {
   status: Exclude<ApprovalStatus, "pending">;
   /** How the human proved themselves: IDKit (World ID 4.0), World ID for Agents (OIDC), or mock. */
   method?: "idkit" | "oidc" | "mock";
+  identityBinding?: "commitment" | "name";
   reason?: string;
   approverCommitment?: string;
   approverName?: string;
@@ -103,6 +104,8 @@ export interface AuditRecord {
   roleCheck?: RoleCheck;
   worldIdVerified: boolean;
   approvalMethod?: string;
+  /** How the approver was bound to the role: "commitment" (identity match) or "name" (sandbox: live subname only). */
+  identityBinding?: string;
   targetModel?: string;
   /** Attribution: which agent policy the request ran under, and what egress cost in tokens. */
   agent?: string;
@@ -126,6 +129,8 @@ export interface PolicyResolver {
 }
 export interface RoleRegistry {
   isValidApprover(commitment: string, role: string, approverName?: string): Promise<RoleCheck>;
+  /** Name-only check (no identity match): is `approverName` a live, unrevoked approver under `role`? */
+  isLiveApprover?(role: string, approverName: string): Promise<RoleCheck>;
   enroll?(approverName: string, commitment: string): Promise<void>;
   revoke?(approverName: string): Promise<void>;
 }

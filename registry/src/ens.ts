@@ -63,6 +63,11 @@ export class EnsRoleRegistry implements RoleRegistry {
     return "valid";
   }
 
+  async isLiveApprover(role: string, approverName: string): Promise<RoleCheck> {
+    if (!approverName || !normalize(approverName).endsWith("." + normalize(role))) return "unknown";
+    return (await text(this.client, approverName, "airlock.approver")) ? "valid" : "revoked";
+  }
+
   /** Creates the approver's subname if needed (ENS_APPROVER_REGISTRY), then stores the commitment. */
   async enroll(name: string, commitment: string) {
     if (!this.writer) throw new Error("ENS writer not configured (ENS_PRIVATE_KEY / ENS_RESOLVER)");

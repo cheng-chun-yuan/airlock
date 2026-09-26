@@ -40,6 +40,13 @@ export class StaticRoleRegistry implements RoleRegistry {
     return hits.some((a) => a.revoked) ? "revoked" : "expired";
   }
 
+  async isLiveApprover(role: string, approverName: string): Promise<RoleCheck> {
+    const a = this.load().find((x) => x.name === approverName && x.name.endsWith("." + role));
+    if (!a) return "unknown";
+    if (a.revoked) return "revoked";
+    return a.expires && a.expires * 1000 < Date.now() ? "expired" : "valid";
+  }
+
   async enroll(name: string, commitment: string) {
     this.save([...this.load().filter((a) => a.name !== name), { name, commitment }]);
   }
