@@ -2,6 +2,7 @@ import { concat, keccak256, pad, toHex, type Hex } from "viem";
 
 export * from "./static";
 export * from "./ens";
+export * from "./multibaas";
 
 /**
  * On-chain we store commitment(nullifier), never the nullifier itself, so the
