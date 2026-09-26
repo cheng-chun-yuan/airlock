@@ -25,7 +25,8 @@ export class MultiBaas {
   }
 
   uploadContract(label: string, abi: unknown[], version = "1.0") {
-    return this.req("POST", `/contracts/${label}`, { label, contractName: label, version, rawAbi: JSON.stringify(abi) });
+    // MultiBaas requires a bytecode field; we only index existing contracts, so an empty one is enough.
+    return this.req("POST", `/contracts/${label}`, { label, contractName: label, version, rawAbi: JSON.stringify(abi), bin: "0x" });
   }
   setAlias(alias: string, address: string) {
     return this.req("POST", `/chains/ethereum/addresses`, { alias, address });
@@ -112,7 +113,13 @@ export interface NameBook {
   accounts: Record<string, string>; // address (lowercase) → label
 }
 
-export type Described = { kind: "policy" | "approver" | "audit" | "access" | "alias" | "name"; text: string; invalidates: boolean };
+export type Described = {
+  kind: "policy" | "approver" | "audit" | "access" | "alias" | "name";
+  text: string;
+  invalidates: boolean;
+  /** Internal bookkeeping a person doesn't need to see (token roles minted with a subname, resolver pointer). */
+  noise?: boolean;
+};
 
 export function describe(e: ChainEvent, book: NameBook): Described {
   const rec = (id: string) => book.records[id] ?? `record #${id}`;
@@ -135,7 +142,11 @@ export function describe(e: ChainEvent, book: NameBook): Described {
       return { kind: "name", text: `${e.args.label}${parent && "." + parent} registered`, invalidates: true };
     case "ExpiryUpdated":
       return { kind: "name", text: `${labelOf(e.args.tokenId)}${parent && "." + parent} expiry → ${new Date(Number(e.args.newExpiry) * 1000).toISOString().slice(0, 10)}`, invalidates: true };
+    case "ResolverUpdated":
+      return { kind: "name", text: `${labelOf(e.args.tokenId)}${parent && "." + parent} resolver set`, invalidates: true, noise: true };
     case "EACRolesChanged": {
+      // On a registry these are the per-name token roles minted with every subname: bookkeeping, not policy.
+      if (book.registries[e.contract]) return { kind: "access", text: `roles on ${labelOf(e.args.resource)}${parent && "." + parent}`, invalidates: false, noise: true };
       const res = BigInt(e.args.resource);
       const key = res === 0n ? "all records (root)" : book.keys.find((k) => BigInt(keccak256(toBytes(k))) === res) ?? `resource ${e.args.resource.slice(0, 10)}…`;
       const who = book.accounts[String(e.args.account).toLowerCase()] ?? String(e.args.account).slice(0, 10) + "…";

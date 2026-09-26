@@ -144,6 +144,7 @@ const chain = mb
           if (e.name === "LabelRegistered" || e.name === "Linked") book = undefined; // new names/records: rebuild next time
           const d = describe(e, b);
           if (d.invalidates && policies instanceof EnsPolicyResolver) policies.invalidate();
+          if (d.noise) continue;
           approvals.emitEvent({ type: "chain.event", kind: d.kind, text: d.text, tx: e.tx, at: e.at });
           console.log(`[multibaas] ${d.text}${e.tx ? `  tx ${e.tx}` : ""}`);
         }
@@ -157,6 +158,7 @@ const chain = mb
           .map((raw) => toChainEvent(raw))
           .filter((e): e is ChainEvent => !!e)
           .map((e) => ({ ...describe(e, b), tx: e.tx, block: e.block, at: e.at }))
+          .filter((x) => !x.noise)
           .sort((x, y) => (y.block ?? 0) - (x.block ?? 0));
       },
     }

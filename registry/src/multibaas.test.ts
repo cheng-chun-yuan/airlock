@@ -34,4 +34,6 @@ test("events become sentences a reviewer can read", () => {
   assert.equal(describe(ev("Linked", { recordId: "8", name: toHex(packetToBytes("nda-agent.agents.airlock.eth")) }), book).text, "nda-agent.agents.airlock.eth linked → legal.policies.airlock.eth (shared record)");
   assert.match(describe(ev("EACRolesChanged", { resource: BigInt(keccak256(toBytes("airlock.models"))).toString(), account: "0xGATEWAY", oldRoleBitmap: "16", newRoleBitmap: "0" }), book).text, /gateway lost write access on airlock.models/);
   assert.equal(dnsDecode(toHex(packetToBytes("a.b.eth"))), "a.b.eth");
+  // token roles minted with a subname on a registry: kept out of the feed
+  assert.equal(describe(ev("EACRolesChanged", { resource: tokenId.toString(), account: "0xGATEWAY", oldRoleBitmap: "0", newRoleBitmap: "1" }, "0xlegal"), book).noise, true);
 });

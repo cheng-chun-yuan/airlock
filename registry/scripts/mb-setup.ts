@@ -4,7 +4,7 @@
  *   npm run mb:setup        (MULTIBAAS_URL, MULTIBAAS_API_KEY; PUBLIC_URL for the webhook; idempotent)
  *
  * - uploads two event ABIs: airlockresolver (PermissionedResolver) and airlockregistry (PermissionedRegistry)
- * - aliases + links the resolver and the four registries from data/ens-deploy.json, indexing from ~15k blocks back
+ * - aliases + links the resolver and the four registries from data/ens-deploy.json (free plan: from 100 blocks back)
  * - creates the webhook → <PUBLIC_URL>/multibaas/webhook and saves its secret to .env (MULTIBAAS_WEBHOOK_SECRET)
  */
 import { appendFileSync, readFileSync } from "node:fs";
@@ -15,7 +15,8 @@ const env = process.env;
 if (!env.MULTIBAAS_URL || !env.MULTIBAAS_API_KEY) throw new Error("set MULTIBAAS_URL and MULTIBAAS_API_KEY in .env");
 const mb = new MultiBaas(env.MULTIBAAS_URL, env.MULTIBAAS_API_KEY);
 const deploy = JSON.parse(readFileSync("data/ens-deploy.json", "utf8"));
-const START = env.MULTIBAAS_START_BLOCK ?? "-15000";
+// Free plan: past_logs_max_depth = 100 blocks, so index from ~20 min back; everything newer is indexed and pushed.
+const START = env.MULTIBAAS_START_BLOCK ?? "-100";
 
 const RESOLVER_ABI = parseAbi([
   "event TextUpdated(uint256 indexed recordId, string indexed keyHash, string key, string value)",
