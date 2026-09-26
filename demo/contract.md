@@ -1,7 +1,7 @@
 CONFIDENTIAL — MASTER SERVICES AGREEMENT (DRAFT)
 
-Between Acme Holdings ("Provider") and Globex Corporation ("Client").
-Client contact: Hank Scorpio, hank@globex.example, +1 415 555 0142.
+Between Kestrelwood Analytics ("Provider") and Morrow Vale Logistics ("Client").
+Client contact: Daniel Okafor, d.okafor@morrowvale.example, +1 415 555 0142.
 
 1. Fees. Client shall pay Provider $2,400,000 per year, invoiced quarterly.
 2. Liability. Provider's aggregate liability is capped at $50,000, excluding
@@ -11,5 +11,5 @@ Client contact: Hank Scorpio, hank@globex.example, +1 415 555 0142.
 4. Termination for convenience. Client may terminate at any time on 10 days
    notice; Provider may not terminate for convenience.
 5. Data. Provider may use Client data to improve its services, including
-   sharing aggregated data with Initech.
+   sharing aggregated data with Halden & Brook LLP.
 7. Indemnification. Provider indemnifies Client for all claims of any kind.

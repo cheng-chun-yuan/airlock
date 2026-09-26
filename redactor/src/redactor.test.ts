@@ -11,7 +11,7 @@ test("contract is confidential, redacted, and keeps punctuation", async () => {
   const out = await redactor.redact([{ role: "user", content: readFileSync(new URL("../../demo/contract.md", import.meta.url), "utf8") }], s);
   const text = out.payload[0].content!;
   assert.equal(out.sourceClass, "confidential");
-  for (const leak of ["Globex", "Hank Scorpio", "hank@globex.example", "2,400,000", "Initech"]) assert(!text.includes(leak), leak);
+  for (const leak of ["Morrow Vale", "Daniel Okafor", "d.okafor@morrowvale.example", "2,400,000", "Halden & Brook", "Kestrelwood"]) assert(!text.includes(leak), leak);
   assert.match(text, /capped at <MONEY_\d+>, excluding/);
   assert.deepEqual(out.entities, { ORG: 3, PERSON: 1, EMAIL: 1, PHONE: 1, MONEY: 2 });
 });
@@ -64,4 +64,12 @@ test("llm recognizer accepts only verbatim substrings", async () => {
   const rec = llmRecognizer(async () => '[{"text":"the largest chip foundry in Hsinchu","type":"ORG"},{"text":"Project Bluebird","type":"PROJECT"},{"text":"invented stuff","type":"ORG"},{"text":"Q3","type":"ID"}]');
   const spans = await rec.find(text);
   assert.deepEqual(spans.map((s) => text.slice(s.start, s.end)), ["the largest chip foundry in Hsinchu", "Project Bluebird"]);
+});
+
+test("dictionary aliases share the canonical placeholder, so short forms can't leak", async () => {
+  const s = newSession("t6");
+  const r = new PipelineRedactor([dictionaryRecognizer({ ORG: [["Kestrelwood Analytics", "Kestrelwood"]] })]);
+  const out = await r.redact([{ role: "user", content: "Kestrelwood Analytics signed; Kestrelwood's liability is capped." }], s);
+  assert.equal(out.payload[0].content, "<ORG_1> signed; <ORG_1>'s liability is capped.");
+  assert.equal(rehydrateText("<ORG_1>'s risk", s), "Kestrelwood Analytics's risk");
 });

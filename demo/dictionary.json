@@ -1,5 +1,14 @@
 {
   "ORG": [
+    [
+      "Kestrelwood Analytics",
+      "Kestrelwood"
+    ],
+    [
+      "Morrow Vale Logistics",
+      "Morrow Vale"
+    ],
+    "Halden & Brook LLP",
     "Globex Corporation",
     "Globex",
     "Initech",
@@ -9,12 +18,18 @@
     "TSMC"
   ],
   "PERSON": [
+    [
+      "Daniel Okafor",
+      "Okafor"
+    ],
+    "Mira Castellanos",
     "Hank Scorpio",
     "Bill Lumbergh",
     "Alice Chen",
     "Peter Gibbons"
   ],
   "PROJECT": [
+    "Project Lanternfish",
     "Project Nightingale",
     "Operation Sandcastle"
   ]

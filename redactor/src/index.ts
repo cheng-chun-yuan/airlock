@@ -4,6 +4,8 @@ export interface Span {
   start: number;
   end: number;
   type: string;
+  /** Canonical value when the match is an alias (e.g. "Kestrelwood" → "Kestrelwood Analytics"): same placeholder. */
+  canonical?: string;
 }
 
 export interface Recognizer {
@@ -34,18 +36,25 @@ export const ruleRecognizer: Recognizer = {
   },
 };
 
-/** Company dictionary: { "ORG": ["Globex"], "PERSON": ["Hank Scorpio"], ... } — case-insensitive literal match. */
-export function dictionaryRecognizer(dict: Record<string, string[]>): Recognizer {
-  const entries = Object.entries(dict).flatMap(([type, words]) => words.map((w) => ({ type, w })));
+/**
+ * Company dictionary, case-insensitive literal match:
+ *   { "ORG": ["Globex", ["Kestrelwood Analytics", "Kestrelwood"]], "PERSON": ["Hank Scorpio"] }
+ * An array is [canonical, ...aliases]; every form maps to the canonical value's placeholder,
+ * so a short form ("Kestrelwood's liability") can't leak the name the long form hides.
+ */
+export function dictionaryRecognizer(dict: Record<string, (string | string[])[]>): Recognizer {
+  const entries = Object.entries(dict).flatMap(([type, words]) =>
+    words.flatMap((w) => (Array.isArray(w) ? w.map((alias) => ({ type, w: alias, canonical: w[0] })) : [{ type, w, canonical: w }])),
+  );
   return {
     name: "dictionary",
     find(text) {
       const out: Span[] = [];
       const lower = text.toLowerCase();
-      for (const { type, w } of entries) {
+      for (const { type, w, canonical } of entries) {
         const needle = w.toLowerCase();
         for (let i = lower.indexOf(needle); i !== -1; i = lower.indexOf(needle, i + needle.length))
-          out.push({ start: i, end: i + needle.length, type });
+          out.push({ start: i, end: i + needle.length, type, ...(canonical !== w && { canonical }) });
       }
       return out;
     },
@@ -100,15 +109,17 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 export class PipelineRedactor implements Redactor {
   constructor(private recognizers: Recognizer[], private onError: (r: string, e: unknown) => void = () => {}) {}
 
-  private placeholder(session: Session, type: string, value: string): string {
-    const key = value.trim().toLowerCase(); // forward keys are case-folded; reverse keeps the first spelling seen
+  private placeholder(session: Session, type: string, value: string, canonical?: string): string {
+    const name = (canonical ?? value).trim();
+    const key = name.toLowerCase(); // forward keys are case-folded; reverse keeps the first spelling seen
     let ph = session.forward.get(key);
     if (!ph) {
       session.counters[type] = (session.counters[type] ?? 0) + 1;
       ph = `<${type}_${session.counters[type]}>`;
       session.forward.set(key, ph);
-      session.reverse.set(ph, value.trim());
+      session.reverse.set(ph, name);
     }
+    if (canonical) session.forward.set(value.trim().toLowerCase(), ph); // alias → same placeholder
     return ph;
   }
 
@@ -138,7 +149,7 @@ export class PipelineRedactor implements Redactor {
       for (const s of spans) {
         if (s.start < lastEnd) continue;
         lastEnd = s.end;
-        this.placeholder(session, s.type, text.slice(s.start, s.end));
+        this.placeholder(session, s.type, text.slice(s.start, s.end), s.canonical);
         types.add(s.type);
       }
     }
