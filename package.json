@@ -17,7 +17,8 @@
     "smoke": "bash demo/smoke.sh",
     "test": "tsx --test \"**/src/**/*.test.ts\"",
     "ens": "tsx --env-file-if-exists=.env registry/scripts/ens.ts",
-    "ens:setup": "tsx --env-file-if-exists=.env registry/scripts/ens-setup.ts"
+    "ens:setup": "tsx --env-file-if-exists=.env registry/scripts/ens-setup.ts",
+    "ens:eac": "tsx --env-file-if-exists=.env registry/scripts/ens-eac.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

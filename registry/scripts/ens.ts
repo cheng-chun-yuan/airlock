@@ -22,9 +22,14 @@ const client = ensClient(rpc, env.ENS_UNIVERSAL_RESOLVER as Hex | undefined);
 const auditName = env.ENS_AUDIT_NAME ?? "audit.acme.eth";
 const POLICY_KEYS = ["maxClass", "egress", "models", "approverRole", "ownerRole"] as const;
 
-function writer(): EnsWriter {
-  if (!env.ENS_PRIVATE_KEY || !env.ENS_RESOLVER) throw new Error("set ENS_PRIVATE_KEY and ENS_RESOLVER (your PermissionedResolver) to write");
-  return new EnsWriter(rpc, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client, env.ENS_APPROVER_REGISTRY as Hex | undefined);
+/** Gateway key: approver + audit records. Policy keys need the security key (see `npm run ens:eac`). */
+const GATEWAY_KEYS = new Set(["airlock.approver", "airlock.auditRoot"]);
+function writer(forKey?: string): EnsWriter {
+  const policy = forKey && !GATEWAY_KEYS.has(forKey) && env.ENS_SECURITY_PRIVATE_KEY;
+  const key = policy ? env.ENS_SECURITY_PRIVATE_KEY : env.ENS_PRIVATE_KEY;
+  if (!key || !env.ENS_RESOLVER) throw new Error("set ENS_PRIVATE_KEY and ENS_RESOLVER (your PermissionedResolver) to write");
+  if (forKey) console.log(`  signing ${forKey} as ${policy ? "security" : "gateway"} account`);
+  return new EnsWriter(rpc, key as Hex, env.ENS_RESOLVER as Hex, client, env.ENS_APPROVER_REGISTRY as Hex | undefined);
 }
 const need = (v: string | undefined, name: string) => v ?? (console.error(`missing <${name}>`), process.exit(2));
 const text = (name: string, key: string) => client.getEnsText({ name, key }).catch((e) => `error: ${(e as Error).message.split("\n")[0]}`);
@@ -49,7 +54,7 @@ async function main() {
       const agent = need(args[0], "agent");
       const all = JSON.parse(readFileSync(args[1] ?? "demo/policies.json", "utf8"));
       const p = all[agent] ?? Object.values(all)[0];
-      const w = writer();
+      const w = writer("airlock.maxClass");
       for (const k of POLICY_KEYS)
         if (p[k] !== undefined) console.log(`airlock.${k} = ${p[k]}  tx ${await w.setText(agent, `airlock.${k}`, String(p[k]))}`);
       return;
@@ -66,7 +71,7 @@ async function main() {
       console.log(`tx ${await writer().setText(auditName, "airlock.auditRoot", need(args[0], "root"))}`);
       return;
     case "set":
-      console.log(`tx ${await writer().setText(need(args[0], "name"), need(args[1], "key"), need(args[2], "value"))}`);
+      console.log(`tx ${await writer(need(args[1], "key")).setText(need(args[0], "name"), args[1], need(args[2], "value"))}`);
       return;
     case "commitment":
       console.log(commitmentOf(need(args[0], "nullifier")));
