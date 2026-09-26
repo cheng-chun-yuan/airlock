@@ -2,6 +2,9 @@
 # End-to-end smoke test against a running gateway (mock World ID + static registry).
 set -euo pipefail
 GW=${GW:-http://localhost:8787}
+# Send the access token if the gateway has one (AIRLOCK_ACCESS_TOKEN in .env).
+TOKEN=${AIRLOCK_ACCESS_TOKEN:-$(grep -s '^AIRLOCK_ACCESS_TOKEN=' .env | cut -d= -f2)}
+[ -n "$TOKEN" ] && curl() { command curl -H "Authorization: Bearer $TOKEN" "$@"; }
 PROMPT=$(node -e 'console.log(JSON.stringify("Review this contract, list the riskiest clauses:\n\n"+require("fs").readFileSync("demo/contract.md","utf8")))')
 body() { echo "{\"model\":\"airlock/claude-sonnet-5\",\"messages\":[{\"role\":\"user\",\"content\":$PROMPT}]}"; }
 pending() { for _ in $(seq 1 40); do id=$(curl -s "$GW/approvals?status=pending" | node -e 'const a=JSON.parse(require("fs").readFileSync(0));process.stdout.write(a[0]?.id??"")'); [ -n "$id" ] && { echo "$id"; return; }; sleep 0.25; done; echo "no pending approval" >&2; exit 1; }
