@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { ChatMessage, Decision, RoleRegistry } from "@airlock/core";
-import { publicView, type AirlockEvent, type ApprovalStore, type ProofVerifier, type WorldIdProof } from "@airlock/approval";
+import { publicView, type AirlockEvent, type ApprovalStore, type ProofVerifier, type WorldIdProof, type WorldOidc } from "@airlock/approval";
 import { commitmentOf } from "@airlock/registry";
 import type { JsonlAuditLog } from "@airlock/audit";
 import type { Pipeline } from "./pipeline";
@@ -15,6 +15,8 @@ export interface AppDeps {
   audit: JsonlAuditLog;
   roles: RoleRegistry;
   verifier: ProofVerifier;
+  /** World ID for Agents (Human Continuity OIDC); optional second way to approve/enroll. */
+  oidc?: WorldOidc;
   localModel: string;
   claudeModels: string[];
   consoleHtml: string;
@@ -111,14 +113,15 @@ export function buildApp(d: AppDeps) {
     } else {
       // The proof's signal must be this request's payloadHash: approving one payload can't be replayed on another.
       const v = await d.verifier.verify(body, req.payloadHash, d.approveAction);
-      if (!v.ok) decision = { status: "proof_invalid", reason: `World ID proof rejected: ${v.error}`, worldIdVerified: false };
+      const method = d.verifier.mode === "mock" ? ("mock" as const) : ("idkit" as const);
+      if (!v.ok) decision = { status: "proof_invalid", method, reason: `World ID proof rejected: ${v.error}`, worldIdVerified: false };
       else {
         const commitment = commitmentOf(v.nullifier!);
         const roleCheck = await d.roles.isValidApprover(commitment, req.requiredRole, body.approverName);
         decision =
           roleCheck === "valid"
-            ? { status: "approved", approverCommitment: commitment, approverName: body.approverName, roleCheck, worldIdVerified: true }
-            : { status: "role_invalid", reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, approverCommitment: commitment, approverName: body.approverName, roleCheck, worldIdVerified: true };
+            ? { status: "approved", method, approverCommitment: commitment, approverName: body.approverName, roleCheck, worldIdVerified: true }
+            : { status: "role_invalid", method, reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, approverCommitment: commitment, approverName: body.approverName, roleCheck, worldIdVerified: true };
       }
     }
     d.approvals.resolve(req.id, decision);
@@ -175,6 +178,60 @@ export function buildApp(d: AppDeps) {
     if (!d.roles.revoke) return c.json({ error: "role registry is read-only" }, 501);
     await d.roles.revoke(approverName);
     return c.json({ revoked: approverName });
+  });
+
+  // ---------- World ID for Agents (Human Continuity OIDC) ----------
+  const page = (title: string, body: string, next?: string) =>
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${next ? `<meta http-equiv="refresh" content="3;url=${next}">` : ""}` +
+    `<body style="font:15px/1.6 system-ui;max-width:560px;margin:12vh auto;padding:0 16px;color:#141414"><p style="font:500 11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:#6f6f6f">Airlock · World ID for Agents</p><h2 style="margin:.2em 0">${title}</h2><p>${body}</p>${next ? `<p><a href="${next}">Back to the console →</a></p>` : ""}</body>`;
+  const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+
+  app.get("/approvals/:id/oidc", async (c) => {
+    if (!d.oidc) return c.json({ error: "World ID for Agents (OIDC) not configured" }, 501);
+    const req = d.approvals.get(c.req.param("id"));
+    if (!req) return c.json({ error: "not found" }, 404);
+    if (req.status !== "pending") return c.redirect(`/console#${req.id}`);
+    // The OIDC nonce commits to this approval + payloadHash; see approval/src/oidc.ts.
+    return c.redirect(await d.oidc.start("approve", req.id, c.req.query("approverName") ?? "", req.payloadHash));
+  });
+
+  app.get("/enroll/oidc", async (c) => {
+    if (!d.oidc) return c.json({ error: "World ID for Agents (OIDC) not configured" }, 501);
+    const name = c.req.query("approverName") ?? "";
+    if (!name) return c.json({ error: "approverName required" }, 400);
+    return c.redirect(await d.oidc.start("enroll", name, name, enrollSignal(name)));
+  });
+
+  app.get("/oidc/callback", async (c) => {
+    if (!d.oidc) return c.html(page("Not configured", "World ID for Agents is not configured on this gateway."), 501);
+    const { state = "", code = "", error, error_description } = c.req.query();
+    if (error) {
+      // Cancelled / refused at World: the protected action must not happen.
+      const p = d.oidc.cancel(state);
+      if (p?.kind === "approve") d.approvals.resolve(p.ref, { status: "denied", method: "oidc", reason: `approver cancelled World ID (${error})`, worldIdVerified: false });
+      return c.html(page("Not approved", `World ID returned <b>${esc(error)}</b>${error_description ? ` — ${esc(error_description)}` : ""}. Nothing was sent.`, p?.kind === "approve" ? `/console#${p.ref}` : "/console#enroll"));
+    }
+    const r = await d.oidc.finish(state, code);
+    if (!r.ok) {
+      if (r.pending?.kind === "approve") d.approvals.resolve(r.pending.ref, { status: "proof_invalid", method: "oidc", reason: `World ID for Agents: ${r.error}`, worldIdVerified: false });
+      return c.html(page("Verification failed", esc(r.error), r.pending?.kind === "approve" ? `/console#${r.pending.ref}` : "/console#enroll"), 403);
+    }
+    const commitment = commitmentOf(r.nullifier);
+    if (r.pending.kind === "enroll") {
+      if (!d.roles.enroll) return c.html(page("Read-only registry", "This gateway can't write approver records."), 501);
+      await d.roles.enroll(r.pending.approverName, commitment);
+      return c.html(page("Enrolled", `<b>${esc(r.pending.approverName)}</b> is now bound to this World ID.<br><code style="font-size:12px">commitment ${commitment}</code>`, "/console#enroll"));
+    }
+    const req = d.approvals.get(r.pending.ref);
+    if (!req || req.status !== "pending") return c.html(page("Too late", "This request is no longer waiting for approval."), 409);
+    const roleCheck = await d.roles.isValidApprover(commitment, req.requiredRole, r.pending.approverName);
+    d.approvals.resolve(
+      req.id,
+      roleCheck === "valid"
+        ? { status: "approved", method: "oidc", approverCommitment: commitment, approverName: r.pending.approverName, roleCheck, worldIdVerified: true }
+        : { status: "role_invalid", method: "oidc", reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, approverCommitment: commitment, approverName: r.pending.approverName, roleCheck, worldIdVerified: true },
+    );
+    return c.redirect(`/console#${req.id}`);
   });
 
   // ---------- Console ----------

@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import type { Hex } from "viem";
 import type { PolicyResolver, RoleRegistry } from "@airlock/core";
 import { dictionaryRecognizer, llmRecognizer, LocalAttackScorer, PipelineRedactor, presidioRecognizer, ruleRecognizer, RuleRiskScorer, type Recognizer } from "@airlock/redactor";
-import { ApprovalStore, MockVerifier, WorldIdVerifier, type ProofVerifier } from "@airlock/approval";
+import { ApprovalStore, MockVerifier, WorldIdVerifier, WorldOidc, type ProofVerifier } from "@airlock/approval";
 import { ensClient, EnsPolicyResolver, EnsRoleRegistry, EnsWriter, StaticPolicyResolver, StaticRoleRegistry } from "@airlock/registry";
 import { JsonlAuditLog } from "@airlock/audit";
 import { ClaudeModel, LocalModel, OpenAICompatModel, type FrontierModel } from "./llm";
@@ -63,8 +63,21 @@ const verifier: ProofVerifier =
         environment: env.WORLD_ENV === "production" ? "production" : "staging",
         proof: env.WORLD_PROOF === "legacy" ? "legacy" : "v4",
         stagingToken: env.WORLD_STAGING_TOKEN,
+        consumedFile: path("data/worldid-consumed.txt"),
       })
     : new MockVerifier();
+
+// World ID for Agents: Human Continuity OIDC (sandbox.auth.world.org for the event)
+const port = Number(env.PORT ?? 8787);
+const oidc =
+  env.WORLD_OIDC_CLIENT_ID && env.WORLD_OIDC_CLIENT_SECRET
+    ? new WorldOidc({
+        issuer: env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org",
+        clientId: env.WORLD_OIDC_CLIENT_ID,
+        clientSecret: env.WORLD_OIDC_CLIENT_SECRET,
+        redirectUri: env.WORLD_OIDC_REDIRECT_URI ?? `http://localhost:${port}/oidc/callback`,
+      })
+    : undefined;
 
 const auditName = env.ENS_AUDIT_NAME ?? "audit.acme.eth";
 const audit = new JsonlAuditLog(path(env.AUDIT_FILE ?? "data/audit.jsonl"), env.GATEWAY_SECRET ?? "dev-secret-change-me", writer && ((root) => writer!.setText(auditName, "airlock.auditRoot", root)));
@@ -93,6 +106,7 @@ const app = buildApp({
   audit,
   roles,
   verifier,
+  oidc,
   localModel: local.model,
   claudeModels: (env.EGRESS_MODELS ?? env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
   consoleHtml: readFileSync(path("console/index.html"), "utf8"),
@@ -100,6 +114,7 @@ const app = buildApp({
   ensLink: env.SEPOLIA_RPC_URL ? () => `https://app.ens.dev/${auditName}` : undefined,
   publicConfig: {
     worldIdMode: verifier.mode,
+    worldIdAgents: !!oidc,
     ensMode,
     defaultClaudeModel,
     egress: egress.configured ? egress.name : null,
@@ -112,7 +127,6 @@ const app = buildApp({
 if (env.AUDIT_ANCHOR_INTERVAL_MS && writer)
   setInterval(() => audit.anchor().then((a) => console.log(`[audit] anchored ${a.root} tx=${a.tx}`)).catch((e) => console.warn(`[audit] anchor failed: ${e.message}`)), Number(env.AUDIT_ANCHOR_INTERVAL_MS));
 
-const port = Number(env.PORT ?? 8787);
 serve({ fetch: app.fetch, port, hostname: env.HOST ?? "0.0.0.0" }, () => {
   console.log(`airlock gateway on :${port}  local=${local.model}  egress=${egress.configured ? `${egress.name} → ${defaultClaudeModel}` : "NOT CONFIGURED"}  worldid=${verifier.mode}  ens=${ensMode}`);
   console.log(`console → http://localhost:${port}/console`);
