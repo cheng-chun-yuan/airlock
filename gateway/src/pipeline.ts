@@ -257,6 +257,7 @@ export class Pipeline {
         approverCommitment: extra.approverCommitment,
         roleCheck: extra.roleCheck,
         worldIdVerified: extra.worldIdVerified ?? false,
+        approvalMethod: extra.method,
       });
       return { kind: "fallback", meta: { ...meta, decision, reason }, notice: this.notice(targetModel, reason) };
     };
@@ -300,6 +301,7 @@ export class Pipeline {
           approverCommitment: grant.decision.approverCommitment,
           roleCheck: grant.decision.roleCheck,
           worldIdVerified: grant.decision.worldIdVerified,
+          approvalMethod: grant.decision.method,
         },
       };
     }
@@ -350,6 +352,7 @@ export class Pipeline {
         approverCommitment: decision.approverCommitment,
         roleCheck: decision.roleCheck,
         worldIdVerified: decision.worldIdVerified,
+        approvalMethod: decision.method,
       },
     };
   }

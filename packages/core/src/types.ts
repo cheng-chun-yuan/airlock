@@ -79,6 +79,8 @@ export interface ApprovalRequest {
 
 export interface Decision {
   status: Exclude<ApprovalStatus, "pending">;
+  /** How the human proved themselves: IDKit (World ID 4.0), World ID for Agents (OIDC), or mock. */
+  method?: "idkit" | "oidc" | "mock";
   reason?: string;
   approverCommitment?: string;
   approverName?: string;
@@ -100,6 +102,7 @@ export interface AuditRecord {
   approverCommitment?: string;
   roleCheck?: RoleCheck;
   worldIdVerified: boolean;
+  approvalMethod?: string;
   targetModel?: string;
   /** Attribution: which agent policy the request ran under, and what egress cost in tokens. */
   agent?: string;

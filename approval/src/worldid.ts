@@ -1,3 +1,4 @@
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { hashSignal } from "@worldcoin/idkit-core/hashing";
 import { signRequest } from "@worldcoin/idkit-core/signing";
 
@@ -41,6 +42,8 @@ export interface WorldIdConfig {
   stagingToken?: string;
   verifyBase?: string; // default developer.world.org (v4)
   legacyBase?: string; // default developer.worldcoin.org (v2, apps not yet migrated to World ID 4.0)
+  /** Append-only file of consumed proofs, so a restart can't re-open a replay window. */
+  consumedFile?: string;
 }
 
 /**
@@ -55,7 +58,14 @@ export class WorldIdVerifier implements ProofVerifier {
   readonly mode = "worldid" as const;
   private used = new Set<string>(); // replay guard: v4 returns success even on nullifier reuse
 
-  constructor(private cfg: WorldIdConfig) {}
+  constructor(private cfg: WorldIdConfig) {
+    if (cfg.consumedFile && existsSync(cfg.consumedFile)) for (const k of readFileSync(cfg.consumedFile, "utf8").split("\n")) if (k) this.used.add(k);
+  }
+
+  private consume(key: string) {
+    this.used.add(key);
+    if (this.cfg.consumedFile) appendFileSync(this.cfg.consumedFile, key + "\n");
+  }
 
   requestContext(action: string, signal: string) {
     const s = signRequest({ signingKeyHex: this.cfg.signingKeyHex, action, ttl: 300 });
@@ -87,16 +97,18 @@ export class WorldIdVerifier implements ProofVerifier {
       headers: { "content-type": "application/json", ...(this.cfg.stagingToken && { "x-staging-verification-token": this.cfg.stagingToken }) },
       body: JSON.stringify(this.cfg.proof === "legacy" ? proof : { ...proof, min_protocol_version: "4.0" }),
     });
-    const j = (await res.json().catch(() => ({}))) as { success?: boolean; code?: string; detail?: string };
+    const j = (await res.json().catch(() => ({}))) as { success?: boolean; code?: string; detail?: string; environment?: string };
     if (j.code === "app_not_migrated") {
       // App still on the pre-4.0 portal flow: legacy (v3) proofs verify on /api/v2 instead.
       if (proof.protocol_version === "4.0") return { ok: false, error: "app not migrated to World ID 4.0; migrate it in the Developer Portal or request a legacy proof" };
       const v2 = await this.verifyV2(proof, r);
-      if (v2.ok) this.used.add(replayKey);
+      if (v2.ok) this.consume(replayKey);
       return v2;
     }
     if (!res.ok || !j.success) return { ok: false, error: j.code ? `${j.code}: ${j.detail ?? ""}` : `verify HTTP ${res.status}` };
-    this.used.add(replayKey);
+    // Pin the environment: a staging proof must not pass a production deployment (and vice versa).
+    if (j.environment && j.environment !== this.cfg.environment) return { ok: false, error: `proof environment ${j.environment} ≠ ${this.cfg.environment}` };
+    this.consume(replayKey);
     return { ok: true, nullifier: r.nullifier, protocol: proof.protocol_version };
   }
 
