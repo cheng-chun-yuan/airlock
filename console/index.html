@@ -531,7 +531,7 @@ function pick(seq) {
   const f = (k, v) => v === undefined || v === null || v === "" ? "" : `<div class="fact"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`;
   $("#blkinfo").innerHTML = f("decision", r.decision) + f("reason", r.reason) + f("time", new Date(r.timestamp).toLocaleString()) + f("agent", r.agent) + f("model", r.targetModel)
     + f("World ID", r.worldIdVerified ? "verified human" : "—") + f("role check", r.roleCheck) + f("approver commitment", r.approverCommitment)
-    + f("scope of approval", r.scopeOf) + f("tokens", r.usage ? `${r.usage.promptTokens} in / ${r.usage.completionTokens} out` : "") + f("hash", r.hash) + f("prevHash", r.prevHash) + f("payloadHash", r.payloadHash);
+    + f("approval method", r.approvalMethod) + f("identity binding", r.identityBinding === "name" ? "name (sandbox: live ENS subname; World identity not matched)" : r.identityBinding) + f("scope of approval", r.scopeOf) + f("tokens", r.usage ? `${r.usage.promptTokens} in / ${r.usage.completionTokens} out` : "") + f("hash", r.hash) + f("prevHash", r.prevHash) + f("payloadHash", r.payloadHash);
 }
 $("#verify").onclick = async () => {
   await loadLedger();

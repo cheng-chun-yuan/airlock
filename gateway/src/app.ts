@@ -19,6 +19,8 @@ export interface AppDeps {
   verifier: ProofVerifier;
   /** World ID for Agents (Human Continuity OIDC); optional second way to approve/enroll. */
   oidc?: WorldOidc;
+  /** "commitment": the World identity must match the enrolled one. "name": live ENS subname only (sandbox issues a new sub per sign-in). */
+  oidcBinding?: "commitment" | "name";
   localModel: string;
   claudeModels: string[];
   consoleHtml: string;
@@ -252,12 +254,17 @@ export function buildApp(d: AppDeps) {
     }
     const req = d.approvals.get(r.pending.ref);
     if (!req || req.status !== "pending") return c.html(page("Too late", "This request is no longer waiting for approval."), 409);
-    const roleCheck = await d.roles.isValidApprover(commitment, req.requiredRole, r.pending.approverName);
+    const binding = d.oidcBinding === "name" && d.roles.isLiveApprover ? ("name" as const) : ("commitment" as const);
+    const roleCheck =
+      binding === "name"
+        ? await d.roles.isLiveApprover!(req.requiredRole, r.pending.approverName)
+        : await d.roles.isValidApprover(commitment, req.requiredRole, r.pending.approverName);
+    const who = { method: "oidc" as const, identityBinding: binding, approverCommitment: commitment, approverName: r.pending.approverName, roleCheck, worldIdVerified: true };
     d.approvals.resolve(
       req.id,
       roleCheck === "valid"
-        ? { status: "approved", method: "oidc", approverCommitment: commitment, approverName: r.pending.approverName, roleCheck, worldIdVerified: true }
-        : { status: "role_invalid", method: "oidc", reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, approverCommitment: commitment, approverName: r.pending.approverName, roleCheck, worldIdVerified: true },
+        ? { status: "approved", ...who }
+        : { status: "role_invalid", reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, ...who },
     );
     return c.redirect(`/console#${req.id}`);
   });

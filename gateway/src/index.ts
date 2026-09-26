@@ -107,6 +107,8 @@ const app = buildApp({
   roles,
   verifier,
   oidc,
+  // The event sandbox mints a fresh `sub` per sign-in, so identity↔role binding can only be enforced on production.
+  oidcBinding: (env.WORLD_OIDC_BINDING as "commitment" | "name" | undefined) ?? (oidc && /sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment"),
   localModel: local.model,
   claudeModels: (env.EGRESS_MODELS ?? env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
   consoleHtml: readFileSync(path("console/index.html"), "utf8"),
@@ -116,6 +118,7 @@ const app = buildApp({
   publicConfig: {
     worldIdMode: verifier.mode,
     worldIdAgents: !!oidc,
+    oidcBinding: oidc ? (env.WORLD_OIDC_BINDING ?? (/sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment")) : undefined,
     ensMode,
     defaultClaudeModel,
     egress: egress.configured ? egress.name : null,

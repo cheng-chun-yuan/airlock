@@ -258,6 +258,7 @@ export class Pipeline {
         roleCheck: extra.roleCheck,
         worldIdVerified: extra.worldIdVerified ?? false,
         approvalMethod: extra.method,
+        identityBinding: extra.identityBinding,
       });
       return { kind: "fallback", meta: { ...meta, decision, reason }, notice: this.notice(targetModel, reason) };
     };
@@ -302,6 +303,7 @@ export class Pipeline {
           roleCheck: grant.decision.roleCheck,
           worldIdVerified: grant.decision.worldIdVerified,
           approvalMethod: grant.decision.method,
+          identityBinding: grant.decision.identityBinding,
         },
       };
     }
@@ -353,6 +355,7 @@ export class Pipeline {
         roleCheck: decision.roleCheck,
         worldIdVerified: decision.worldIdVerified,
         approvalMethod: decision.method,
+        identityBinding: decision.identityBinding,
       },
     };
   }
