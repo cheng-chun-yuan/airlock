@@ -4,7 +4,7 @@
 
 **Airlock is an OpenAI-compatible gateway that stops AI agents from sending confidential data to frontier models unless a verified human with the right on-chain role approves that exact payload.**
 
-- **Live demo:** <https://soil-foods-jam-conflicts.trycloudflare.com/console>. The access token is in the ETHGlobal submission.
+- **Live:** <https://airlock.polyoctant.com>. The access token is in the ETHGlobal submission.
 - **ENS name:** [`airlock.eth`](https://app.ens.dev/airlock.eth) on ENSv2 Sepolia.
 - **Built at:** ETHGlobal Tokyo 2026.
 
@@ -34,33 +34,24 @@ agent ──OpenAI API──▶  Router → Redactor → Risk (local attack test
 
 ## 🧑‍⚖️ For judges: the 3-minute tour
 
-Open the live demo. It lands on **Demo**: a 7-scene stepper, with the **agent** on the left and the **airlock** on the right. Press **Run scene ▸**, then **Next →**:
+Open <https://airlock.polyoctant.com>. Airlock asks who you are once (name or work email; it's sent as `x-airlock-user` and written to the audit log).
 
-| # | Scene | What happens |
-|---|---|---|
-| 01 | Public | Nothing sensitive → sent automatically, still audited. |
-| 02 | Confidential | **De-identified**: names become labels like `ORG·1` (shown readable for you; flip to *As the model sees it*) → **held** → *World ID for Agents* → **hold** to approve → the answer streams back with the real names. |
-| 03 | Seal | Same request, sealed → the frontier model never sees it; the local model answers. |
-| 04 | Revoked | **Revoke carol on ENS** (Sepolia tx) → carol is a verified human but her role is gone → **role check failed**, nothing sent. |
-| 05 | Two humans | TSMC is de-identified, but the context gives it away → **high risk** → the ENS policy needs **two different humans**: alice ✓, the same person under another name ✗ (World ID), bob ✓ → released. |
-| 06 | New agent | `intern-bot` was never registered → ENSv2 wildcard → org default policy → confidential data **blocked**, with zero setup. |
-| 07 | Proof | **ENS** tab (agents linked to one shared policy, who may write which record key, audit anchor) · **Verify chain** · **Anchor to ENS**. |
-
-Other tabs: **Queue** (every held request with the full airlock chamber), **Ledger** (hash chain), **ENS** (live ENSv2 state, plus approver enroll and lookup).
-
----|---|
-| **Try it** | *Public question* is sent straight out. *Confidential contract* is held at the door. *Re-identifiable* is caught by the local attack test. *Restricted data* never leaves. The answers stream in with real names restored. |
-| **Queue** | The request sits in the **airlock chamber**: Local → Redact → Policy → Human → Egress. Hover a `ORG·1` chip to see the real value, which stays local. Pick **World ID for Agents**, type `alice.legal.approvers.airlock.eth`, and **hold** the button (a tap does nothing). |
-| **Ledger** | Every decision is a hash-chained block. **Walk the chain** re-verifies it. **Anchor root to ENS** writes the Merkle root to `audit.airlock.eth`. |
-| **ENS** | Everything read **live** from Sepolia: the agent's policy records and who may write each one, whether the on-chain audit root matches the local ledger (**Anchor now**), the access-control matrix per record key, an approver lookup, and the name tree. |
-| **Enroll** | Bind a World ID to an ENS approver name. The subname is created on-chain if it doesn't exist. |
+| Page | What to do |
+|---|---|
+| **Overview** | Live health of every dependency (local model, frontier upstream, World ID, ENS, MultiBaas), today's decisions, and anything waiting for a human. |
+| **Playground** | Pick an example. *Public question* goes straight out. *Contract review* is **de-identified** (names become labels like `ORG·1`; you read the names, the model only gets the labels) and **held** until a legal approver verifies with World ID. *Client pricing* is caught by the local re-identification test → high risk → the ENS policy needs **two different humans**; the same World ID under another name is refused. Switch the agent to `intern-bot` (never registered): ENSv2 wildcard gives it the org default, and confidential data is blocked. |
+| **Approvals** | The reviewer's inbox: who asks, why, the de-identified text, risk, and the quorum. **Hold** the button (a tap does nothing), then verify with *World ID for Agents* or *World App QR*. **Seal** denies with a note; the local model answers instead. |
+| **Agents** | Live ENSv2 state: each agent's policy and where it comes from (🔗 linked shared record or ✳︎ wildcard default), the per-record write-access matrix, the audit anchor and the name tree. |
+| **Approvers** | The directory with live ENS status. **Enroll** only through World ID (the subname is created on-chain and holds a commitment, never an identity). **Revoke** unregisters the subname in one Sepolia tx; MultiBaas pushes it to the gateway at once. |
+| **Audit** | The hash-chained ledger: **Verify chain**, **Anchor to ENS**, export CSV/JSON, plus every on-chain policy change indexed by MultiBaas. |
+| **Connect** | Base URL, headers and copy-paste snippets (curl, Python, LibreChat) to point real agents at Airlock. |
 
 ### Built for the people who use it
 | Who | What they get |
 |---|---|
 | **Employee** (talks to the agent) | Sends as themselves (`x-airlock-user`) with a **business reason** (`x-airlock-justification`). A **"Held for approval" card** in the chat says why, with a **Withdraw** button. The answer streams back with real names, or they see why it wasn't sent. |
 | **Approver** (holds the ENS role) | Sees **who asks and why**, the de-identified text (readable, or *as the model sees it*), and the risk. Then **holds to approve** (World ID) or **Seals** with an optional **note** to the requester. **Browser notifications** arrive when a request is waiting. |
-| **Security / compliance** | Live **ENS policy** and who may change it, a hash-chained **ledger** with stats (sent / cleared / sealed / fields kept private / tokens), **CSV/JSON export**, and one-click **anchoring** to ENS. Approvers can be **enrolled and revoked** from the ENS tab. |
+| **Security / compliance** | Live **ENS policy** and who may change it, a hash-chained **ledger** with stats (sent / cleared / sealed / fields kept private / tokens), **CSV/JSON export**, and one-click **anchoring** to ENS. Approvers are **enrolled (World ID only) and revoked** on the Approvers page. |
 
 Patterns borrowed from products teams already know: DLP policy tips with business justification (Microsoft Purview), review with a comment (GitHub pull requests), approval notifications (Slack/Teams approvals), and audit export (Okta / Google Workspace).
 
@@ -178,7 +169,7 @@ airlock.eth                                   UserRegistry (own subregistry), no
 - It **pushes every event to the gateway by webhook** (`POST /multibaas/webhook`, HMAC-verified with a freshness window). The gateway then:
   1. drops its cached policies and ENS view, so the **next request already uses the new on-chain state**;
   2. pushes a readable line to every open Console: *"carol.legal.approvers.airlock.eth unregistered (revoked)"*, *"legal.policies.airlock.eth: airlock.models = claude-*"*, *"gateway lost write access on airlock.models"*.
-- It **serves the change history** from its index (`GET /ens/changes`, shown as *On-chain activity* in the ENS tab). This gives compliance an audit trail of the **policy itself**, next to the hash-chained trail of requests.
+- It **serves the change history** from its index (`GET /ens/changes`, shown as *On-chain policy changes* on the Audit page). This gives compliance an audit trail of the **policy itself**, next to the hash-chained trail of requests.
 
 **Verified live on Sepolia.** Revoking and re-enrolling `carol` on-chain appeared in the Console within seconds of each block:
 - unregistered → approver cleared → registered → approver set;
