@@ -271,6 +271,11 @@
   .quorum .slot { font:600 11px var(--mono); border:1px dashed var(--sand); border-radius:6px; padding:3px 8px; color:var(--umber); }
   .quorum .slot.ok { border-style:solid; border-color:var(--go); background:var(--go-tint); color:var(--go); }
   .agent-select { font:500 12px var(--mono); border:1px solid var(--hairline); border-radius:8px; padding:3px 6px; background:var(--canvas); color:var(--ink); }
+  .activity { display:flex; flex-direction:column; max-height:320px; overflow:auto; }
+  .act { display:grid; grid-template-columns:90px 1fr auto; gap:10px; padding:7px 0; border-bottom:1px solid var(--faint); font-size:13px; align-items:baseline; }
+  .act .kind { font:600 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); }
+  .act.approver .kind { color:var(--ember); } .act.policy .kind, .act.alias .kind { color:var(--hold); } .act.access .kind { color:var(--ink); }
+  .act.new { animation:slide-in .45s cubic-bezier(.2,.8,.2,1); background:var(--hold-tint); }
   .linkish { border:0; background:none; padding:0; font:500 12.5px var(--body); color:var(--umber); cursor:pointer; text-align:left; justify-self:start; } .linkish:hover { color:var(--ink); text-decoration:underline; }
   .composer-meta label { display:flex; flex-direction:column; gap:3px; } .composer-meta label span { font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); }
   .via { display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
@@ -353,6 +358,7 @@
     <div class="ens-grid">
       <div class="panel"><h3>Agent policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the agent's egress policy. Change one on-chain and the next request obeys it.</p><div id="ensPolicy"></div></div>
       <div class="panel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">ENSv2 record aliasing: registered agents <b>link</b> to one shared policy record (edit once → all change). An agent that was never registered falls through <b>wildcard resolution</b> to the resolver's default record, which is the org default.</p><div id="ensAgents"></div></div>
+      <div class="panel" id="ensActivityPanel" style="grid-column:1 / -1" hidden><h3>On-chain activity <span class="muted" style="font:400 13px var(--body)">· indexed and pushed by Curvegrid MultiBaas</span></h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Every policy edit, link, access change, approver registration and revocation on Airlock's ENS contracts. Pushed to the gateway by webhook, so a revocation or policy change takes effect immediately.</p><div id="ensActivity" class="activity"></div></div>
       <div class="panel"><h3>Audit anchor</h3><div id="ensAudit"></div></div>
       <div class="panel"><h3>Who may write what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (eth_call on the live contract).</p><div id="ensAccess"></div></div>
       <div class="panel"><h3>Approvers</h3>
@@ -680,6 +686,15 @@ $("#anchor").onclick = async () => {
   toast(a.error ? "ANCHOR FAILED" : "ANCHORED", a.error ?? (a.tx ? `tx ${a.tx.slice(0, 14)}…` : `root ${a.root.slice(0, 14)}… (no ENS writer configured)`));
 };
 
+/* ---------- on-chain activity (MultiBaas) ---------- */
+const actRow = (a, fresh) => `<div class="act ${esc(a.kind)} ${fresh ? "new" : ""}"><span class="kind">${esc(a.kind)}</span><span>${esc(a.text)}</span>${a.tx ? `<a class="mono" style="font-size:11px" href="https://sepolia.etherscan.io/tx/${esc(a.tx)}" target="_blank">${esc(a.tx.slice(0, 10))}…</a>` : "<span></span>"}</div>`;
+async function loadActivity() {
+  if (!cfg.multibaas) return;
+  $("#ensActivityPanel").hidden = false;
+  const list = await j("/ens/changes");
+  $("#ensActivity").innerHTML = Array.isArray(list) && list.length ? list.slice(0, 60).map((a) => actRow(a)).join("") : `<div class="muted">${esc(list?.error ?? "No indexed events yet (MultiBaas may still be catching up).")}</div>`;
+}
+
 /* ---------- ens ---------- */
 const POLICY_HINT = {
   "airlock.maxClass":"highest data class allowed out",
@@ -727,6 +742,7 @@ async function loadEns() {
     `└─ ${ensApp(a.name)}   ← audit anchor`,
   ].join("\n");
   if (!$("#ensName").value) $("#ensName").value = "alice." + role;
+  loadActivity();
 }
 $("#ensRefresh").onclick = loadEns;
 async function checkApprover() {
@@ -1038,6 +1054,12 @@ function tick(decision) {
     if (request.id === selected) show(selected);
     if (request.id === demo.id) demoApproval(request.id);
     toast(`APPROVED ${request.approvals?.length ?? 1} OF ${request.quorum}`, "A second, different human must approve.");
+  });
+  es.addEventListener("chain.event", (e) => {
+    const a = JSON.parse(e.data);
+    toast(`ON-CHAIN · ${a.kind}`, a.text);
+    const box = $("#ensActivity");
+    if (box && !$("#ensActivityPanel").hidden) { box.querySelector(".muted")?.remove(); box.insertAdjacentHTML("afterbegin", actRow(a, true)); }
   });
   es.addEventListener("approval.refused", async (e) => {
     const { requestId, reason } = JSON.parse(e.data);
