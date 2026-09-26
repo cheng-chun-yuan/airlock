@@ -192,6 +192,37 @@ const app = buildApp({
   oidc,
   ens,
   chain,
+  status: async () => {
+    const t = <T,>(p: Promise<T>, ms = 4000) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
+    const check = async (fn: () => Promise<string>, ms?: number) => { try { return { ok: true, detail: await t(fn(), ms) }; } catch (e) { return { ok: false, detail: (e as Error).message.slice(0, 120) }; } };
+    const [localModel, frontier, ensCheck, mbCheck] = await Promise.all([
+      check(async () => { const r = await fetch(`${env.LOCAL_BASE_URL ?? "http://localhost:8000/v1"}/models`); if (!r.ok) throw new Error(`HTTP ${r.status}`); return local.model; }),
+      check(async () => { if (!egress.configured) throw new Error("no API key"); return `${egress.name} → ${defaultClaudeModel}`; }),
+      check(async () => { if (!ensRead) return "local JSON policies"; const p = await policies.resolve(defaultAgentName); return `${p.agent}: egress=${p.egress}`; }, 12000), // public RPC: slow when cold
+      check(async () => { if (!mb) throw new Error("not configured"); await mb.webhooks(); return env.MULTIBAAS_URL!.replace(/^https?:\/\//, ""); }),
+    ]);
+    return {
+      "Local model": localModel,
+      "Frontier upstream": frontier,
+      "World ID": { ok: verifier.mode !== "mock", detail: verifier.mode === "mock" ? "mock (dev only)" : `IDKit ${env.WORLD_ENV ?? "staging"}${oidc ? " + World ID for Agents" : ""}` },
+      ENS: ensCheck,
+      MultiBaas: mbCheck,
+    };
+  },
+  approverDirectory: async () => {
+    const seen = new Map<string, number>();
+    const add = (n?: string, t = 0) => { for (const x of (n ?? "").split(/,\s*/)) if (x && x.includes(".")) seen.set(x, Math.max(seen.get(x) ?? 0, t)); };
+    for (const r of audit.list()) for (const a of r.approvers ?? []) add(a, r.timestamp);
+    for (const r of approvals.list()) for (const a of r.approvals ?? []) add(a.approverName, a.at);
+    if (mb) {
+      const b = await nameBook();
+      const regs = await mb.events({ contract_label: "airlockregistry", limit: 50 }).catch(() => []);
+      for (const raw of regs) { const e = toChainEvent(raw); if (e?.name === "LabelRegistered" && b.registries[e.contract]?.startsWith("legal.approvers")) add(`${e.args.label}.${b.registries[e.contract]}`); }
+    }
+    if (roles instanceof StaticRoleRegistry) for (const a of JSON.parse(readFileSync(path(env.APPROVERS_FILE ?? "data/approvers.json"), "utf8"))) add(a.name);
+    const role = `legal.approvers.${orgRoot}`;
+    return Promise.all([...seen].map(async ([name, lastSeen]) => ({ name, lastSeen: lastSeen || undefined, status: roles.isLiveApprover ? await roles.isLiveApprover(name.endsWith(role) ? role : name.split(".").slice(1).join("."), name) : "unknown" })));
+  },
   // Test environments (World staging / the event sandbox) use test identities, so approvers are bound to their live
   // ENS name; production binds the World identity to the commitment enrolled on ENS. Override: WORLD_BINDING.
   binding: bindingMode,
@@ -203,6 +234,8 @@ const app = buildApp({
   ensLink: env.SEPOLIA_RPC_URL ? () => `https://app.ens.dev/${auditName}` : undefined,
   publicConfig: {
     worldIdMode: verifier.mode,
+    publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
+    org: orgRoot,
     defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
     worldIdAgents: !!oidc,
     multibaas: !!mb,

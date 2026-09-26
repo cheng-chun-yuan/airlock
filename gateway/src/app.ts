@@ -35,6 +35,10 @@ export interface AppDeps {
   accessToken?: string;
   /** MultiBaas: verified webhook deliveries of ENS events, and the indexed change history. */
   chain?: { secret?: string; onEvents(raw: unknown): Promise<number>; recent(): Promise<unknown[]>; verify(raw: string, sig?: string, ts?: string): boolean };
+  /** Health of each integration, for the Overview page. */
+  status?: () => Promise<Record<string, { ok: boolean; detail: string }>>;
+  /** Approver directory: names seen in approvals, the audit log and MultiBaas-indexed registrations, with live status. */
+  approverDirectory?: () => Promise<{ name: string; status: string; lastSeen?: number }[]>;
   /** Live ENS view for the Console (ENS mode only). */
   ens?: { status(localRoot: string): Promise<unknown>; approver(name: string, role?: string): Promise<unknown> };
 }
@@ -291,6 +295,8 @@ export function buildApp(d: AppDeps) {
     const n = await d.chain.onEvents(body);
     return c.json({ ok: true, events: n });
   });
+  app.get("/status", async (c) => c.json(d.status ? await d.status() : {}));
+  app.get("/approvers", async (c) => c.json(d.approverDirectory ? await d.approverDirectory() : []));
   app.get("/ens/changes", async (c) => (d.chain ? c.json(await d.chain.recent()) : c.json({ error: "MultiBaas not configured" }, 404)));
 
   app.post("/audit/anchor", async (c) => {
