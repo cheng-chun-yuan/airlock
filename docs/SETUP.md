@@ -44,6 +44,29 @@ claude mcp add worldcoin-developer-portal https://developer.world.org/api/mcp --
 - **IDKit is served locally.** The gateway serves the browser bundle and its WASM from `node_modules` at `/vendor/idkit/`, because the CDN build fails WASM initialization.
 - **Replays:** v4 accepts nullifier reuse (with a message), so the gateway rejects replays itself.
 
+### World ID for Agents (Human Continuity OIDC) — the event's dev environment
+
+1. **Register a client.** Go to <https://sandbox.auth.world.org/portal>. The redirect URI must be **public HTTPS**, e.g. `https://<tunnel>/oidc/callback`; localhost isn't accepted. Use auth method `client_secret_basic`.
+2. **Configure `.env`:**
+   ```
+   WORLD_OIDC_CLIENT_ID=...
+   WORLD_OIDC_CLIENT_SECRET=...
+   WORLD_OIDC_REDIRECT_URI=https://<tunnel>/oidc/callback
+   # WORLD_OIDC_ISSUER=https://sandbox.auth.world.org
+   # WORLD_OIDC_BINDING=name|commitment   # default: name on the sandbox, commitment elsewhere
+   ```
+3. **Use it.** In the Console, choose **World ID for Agents** when approving or enrolling.
+
+**Verified against the real sandbox (2026-09-26):**
+- An agent request is held → World sign-in → ID token verified (RS256 via JWKS, `aud`, `iss`, **nonce = H(approval, payloadHash)**, `auth_time`) → ENS role → egress to codex-lb → rehydrated. ✅
+- Cancel (`access_denied`) → denied, nothing sent. ✅
+- A replayed `state` → rejected. ✅
+- A revoked (unregistered) approver → `revoked`, nothing sent. ✅
+
+**Sandbox behaviour worth knowing (also debrief feedback):**
+- The sandbox runs its own test ceremony automatically (`ceremony → approve → complete`), with no human step and no phone.
+- It returns a **new `sub` on every sign-in** (a fresh test human each time), with `acr = …/orb-v3`. So binding one World identity to one approver can't be tested there. In the sandbox the gateway therefore uses **name binding**: World proves *a* verified human approved *this exact payload*, and ENS proves the claimed approver name is a live, unrevoked subname under the role. On a production issuer, set `WORLD_OIDC_BINDING=commitment` to require the enrolled identity. The binding used is written to every audit record (`identityBinding`).
+
 ## 2. ENS v2 on Sepolia
 
 **Live:** `airlock.eth` was set up on 2026-09-26 with the script below, and verified end to end. World ID proofs (simulator) + ENS role reads, on-chain revocation (unregister) → `revoked`, re-enrollment, and the audit root anchored to `audit.airlock.eth` (it matches the gateway's Merkle root).
