@@ -1,6 +1,10 @@
 # Airlock
 
-> **Local AI by default. Frontier AI by human consent. Accountability on-chain.**
+**The human-consent gateway for AI agents.**
+
+> **Frontier AI for power. Humans for consent. Blockchain for certainty.**
+
+Local AI by default · frontier AI by human consent · accountability on-chain.
 
 **Airlock is an OpenAI-compatible gateway that stops AI agents from sending confidential data to frontier models unless a verified human with the right on-chain role approves that exact payload.**
 

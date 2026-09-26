@@ -9,7 +9,7 @@ The cut removes only idle waiting (the Sepolia transaction during Revoke, 1:32).
 ---
 
 **[0:00 · Intro · over Overview]** → live status of every dependency
-> This is Airlock. AI agents leak confidential data the moment they call a frontier model. Airlock is the airlock between them.
+> This is Airlock, the human-consent gateway for AI agents. Agents leak confidential data the moment they call a frontier model. Airlock is the airlock between them.
 
 **[0:08 · 01 Public]** → *Public question* → SENT AUTOMATICALLY
 > An agent talks to Airlock like any OpenAI endpoint. A public question has nothing sensitive in it, so it goes straight out, and it's still audited.
@@ -33,7 +33,7 @@ The cut removes only idle waiting (the Sepolia transaction during Revoke, 1:32).
 > Everything is on the record. Agents link to one shared policy record, so you edit it once and all of them change. Only the security key can change policy; the gateway can only write approvers and the audit root. MultiBaas shows every on-chain change, and every decision is hash-chained and anchored to ENS.
 
 **[3:36 · Outro · over the anchored ledger]**
-> Airlock. Local AI by default, frontier AI by human consent, accountability on-chain.
+> Airlock. Frontier AI for power. Humans for consent. Blockchain for certainty.
 
 ---
 

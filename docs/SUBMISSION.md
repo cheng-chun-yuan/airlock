@@ -5,7 +5,7 @@
 **Project name:** Airlock
 
 **Short description** (under 100 characters):
-> Local AI by default. Frontier AI only when a verified human with an ENS role approves the exact payload.
+> Human-consent gateway for AI agents. AI for power, humans for consent, blockchain for certainty.
 
 **Description:**
 > AI agents leak confidential data the moment they call a frontier model. Airlock is an OpenAI-compatible gateway that any agent (LibreChat, Hermes, Claude Code) can point at instead of a model provider. It works in six steps:
@@ -72,7 +72,7 @@ Two browser windows side by side: the **requester** on Playground, the **approve
 | 1:50 | Playground → Approvals | Example *Client pricing* → approve as `bob` (1 of 2) → same World ID as `alice` → refused, still 1 of 2 | "The re-identification test catches TSMC, so risk is high and ENS requires two different humans. The same World ID under another name is refused: World ID knows it's the same person without knowing who. Only a second, different human can release it." |
 | 2:25 | Playground | Agent `intern-bot` → *Contract review* | "An agent nobody registered gets the org default through ENSv2 wildcard resolution: confidential data blocked, zero setup." |
 | 2:40 | Manage › Agents & policy → Audit | Linked policy + access matrix → **Verify chain** → **Anchor to ENS** | "Only the security key can change policy. Every decision is hash-chained and anchored to ENS." |
-| 2:50 | | | "Local AI by default. Frontier AI by human consent. Accountability on-chain." |
+| 2:50 | | | "Airlock, the human-consent gateway for AI agents. Frontier AI for power. Humans for consent. Blockchain for certainty." |
 
 ## Pre-demo checklist
 - [ ] `docker ps` shows `airlock-named-tunnel` and `codex-lb` up; `curl localhost:8000/v1/models` (vLLM) answers.
