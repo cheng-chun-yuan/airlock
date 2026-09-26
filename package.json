@@ -19,7 +19,8 @@
     "ens": "tsx --env-file-if-exists=.env registry/scripts/ens.ts",
     "ens:setup": "tsx --env-file-if-exists=.env registry/scripts/ens-setup.ts",
     "ens:eac": "tsx --env-file-if-exists=.env registry/scripts/ens-eac.ts",
-    "ens:policies": "tsx --env-file-if-exists=.env registry/scripts/ens-policies.ts"
+    "ens:policies": "tsx --env-file-if-exists=.env registry/scripts/ens-policies.ts",
+    "mb:setup": "tsx --env-file-if-exists=.env registry/scripts/mb-setup.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
