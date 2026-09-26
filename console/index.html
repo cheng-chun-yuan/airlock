@@ -219,7 +219,7 @@
   .tree { font:12.5px/1.75 var(--mono); white-space:pre; overflow-x:auto; background:var(--haze); border-radius:10px; padding:12px 14px; margin:0; }
   .tree a { color:inherit; text-decoration:none; border-bottom:1px dotted var(--sand); } .tree a:hover { color:var(--ember); }
   /* demo */
-  .scenes { list-style:none; margin:0 0 14px; padding:0; display:grid; grid-template-columns:repeat(6, 1fr); gap:6px; }
+  .scenes { list-style:none; margin:0 0 14px; padding:0; display:grid; grid-template-columns:repeat(7, 1fr); gap:6px; }
   .scenes button { width:100%; text-align:left; border:1px solid var(--hairline); background:var(--canvas); border-radius:10px; padding:8px 10px; cursor:pointer; }
   .scenes button b { display:block; font:600 10.5px var(--mono); letter-spacing:.1em; color:var(--umber); }
   .scenes button span { font:500 13px var(--display); }
@@ -251,7 +251,7 @@
   .demo-verdict b { font:600 13px var(--mono); letter-spacing:.14em; display:block; margin-bottom:4px; }
   .demo-verdict.cleared b, .demo-verdict.auto b { color:var(--go); } .demo-verdict.sealed b { color:var(--ember); }
   details.more { margin-top:14px; } details.more summary { cursor:pointer; font:500 11px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); }
-  @media (max-width: 1000px) { .demo-grid { grid-template-columns:1fr; } .scenes { grid-template-columns:repeat(3, 1fr); } .scene { flex-direction:column; align-items:flex-start; } }
+  @media (max-width: 1000px) { .demo-grid { grid-template-columns:1fr; } .scenes { grid-template-columns:repeat(4, 1fr); } .scene { flex-direction:column; align-items:flex-start; } }
   .who-asks { border-left:3px solid var(--hold); background:var(--hold-tint); border-radius:0 10px 10px 0; padding:8px 12px; margin:10px 0 4px; font-size:13.5px; }
   .who-asks b { font-weight:600; } .who-asks q { display:block; margin-top:2px; font-style:italic; quotes:"“" "”"; }
   .held-card { border:1px dashed var(--hold); background:var(--hold-tint); border-radius:12px; padding:10px 12px; font-size:13.5px; display:flex; gap:10px; align-items:center; justify-content:space-between; }
@@ -267,6 +267,10 @@
   .hint-row { display:flex; justify-content:space-between; gap:8px; font-size:12.5px; }
   .pane-card .chamber { margin:12px 0; } .pane-card .stages { padding:10px 8px; } .pane-card .who-asks { margin:8px 0 0; }
   .demo-decide { gap:8px !important; padding-top:10px !important; }
+  .quorum { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:13px; padding:8px 10px; border-radius:10px; background:var(--haze); }
+  .quorum .slot { font:600 11px var(--mono); border:1px dashed var(--sand); border-radius:6px; padding:3px 8px; color:var(--umber); }
+  .quorum .slot.ok { border-style:solid; border-color:var(--go); background:var(--go-tint); color:var(--go); }
+  .agent-select { font:500 12px var(--mono); border:1px solid var(--hairline); border-radius:8px; padding:3px 6px; background:var(--canvas); color:var(--ink); }
   .linkish { border:0; background:none; padding:0; font:500 12.5px var(--body); color:var(--umber); cursor:pointer; text-align:left; justify-self:start; } .linkish:hover { color:var(--ink); text-decoration:underline; }
   .composer-meta label { display:flex; flex-direction:column; gap:3px; } .composer-meta label span { font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); }
   .via { display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
@@ -311,7 +315,7 @@
     </div>
     <div class="demo-grid">
       <div class="pane-card">
-        <div class="pane-head"><p class="eyebrow">Agent · <span class="mono" id="demoAgent"></span></p><div class="trace" id="demoTrace"></div></div>
+        <div class="pane-head"><p class="eyebrow">Agent · <select class="agent-select" id="demoAgent" title="x-airlock-agent: which ENS policy this agent runs under"></select></p><div class="trace" id="demoTrace"></div></div>
         <div class="convo" id="demoConvo"><div class="muted">Pick a scene and press <b>Run</b>.</div></div>
         <div class="composer-meta">
           <label><span>Requester</span><input class="field" id="demoUser" title="Sent as x-airlock-user; shown to the approver and in the audit log" /></label>
@@ -348,6 +352,7 @@
     </div>
     <div class="ens-grid">
       <div class="panel"><h3>Agent policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the agent's egress policy. Change one on-chain and the next request obeys it.</p><div id="ensPolicy"></div></div>
+      <div class="panel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">ENSv2 record aliasing: registered agents <b>link</b> to one shared policy record (edit once → all change). An agent that was never registered falls through <b>wildcard resolution</b> to the resolver's default record, which is the org default.</p><div id="ensAgents"></div></div>
       <div class="panel"><h3>Audit anchor</h3><div id="ensAudit"></div></div>
       <div class="panel"><h3>Who may write what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (eth_call on the live contract).</p><div id="ensAccess"></div></div>
       <div class="panel"><h3>Approvers</h3>
@@ -434,7 +439,7 @@ function stagesFor(r) {
   const nMasked = Object.values(r.entities).reduce((a, b) => a + b, 0);
   const human = r.auto ? "done" : r.status === "pending" ? "active" : r.status === "approved" ? "done" : "fail";
   const egress = r.status === "approved" ? "done" : r.status === "pending" ? "" : "fail";
-  const humanSub = r.auto ? "not needed" : { pending:"waiting", approved:"World ID ✓ role ✓", role_invalid:"role check failed", proof_invalid:"proof rejected", denied:"denied", expired:"timed out" }[r.status];
+  const humanSub = r.auto ? "not needed" : r.status === "pending" && (r.quorum ?? 1) > 1 ? `${r.approvals?.length ?? 0} of ${r.quorum} humans` : { pending:"waiting", approved:"World ID ✓ role ✓", role_invalid:"role check failed", proof_invalid:"proof rejected", denied:"denied", expired:"timed out" }[r.status];
   return {
     stages:[["done", "Local", "kept on-box"], ["done", "De-identify", `${nMasked} replaced`], ["done", "Policy", `ENS · risk ${r.riskLevel}`], [human, "Human", humanSub], [egress, "Egress", r.status === "approved" ? `→ ${r.targetModel}` : r.status === "pending" ? "door shut" : "sealed"]],
     outer:r.status === "approved" ? "open" : r.status === "pending" ? "" : "sealed",
@@ -510,7 +515,7 @@ function decideHTML(r) {
   const whoHTML = cfg.worldIdMode === "mock"
     ? `<label class="eyebrow" style="margin:0">Approving as <span class="muted">(mock World ID)</span></label><div class="opts">${people.map((p, i) => `<button data-i="${i}" class="${who && who.name === p.name ? "on" : ""}">${esc(p.name.split(".")[0])}<span class="muted">.${esc(p.name.split(".").slice(1).join("."))}</span></button>`).join("")}</div>`
     : `<label class="eyebrow" style="margin:0">Approver (ENS name)</label><input id="approverName" placeholder="alice.${esc(r.requiredRole)}" />${viaToggle()}`;
-  return `<div class="decide"><div class="who">${whoHTML}<button class="linkish" id="sealNoteToggle" style="margin-top:8px">+ Add a note for the requester</button><input class="field" id="sealNote" placeholder="Note to the requester (sent with Seal)" style="margin-top:8px; max-width:420px" hidden /></div>
+  return `${quorumHTML(r)}<div class="decide"><div class="who">${whoHTML}<button class="linkish" id="sealNoteToggle" style="margin-top:8px">+ Add a note for the requester</button><input class="field" id="sealNote" placeholder="Note to the requester (sent with Seal)" style="margin-top:8px; max-width:420px" hidden /></div>
     <div class="actions"><button class="seal" id="seal" title="Deny: nothing is sent; the local model answers instead">Seal (deny)</button><button class="hold" id="hold" title="Press and hold ~1s, then verify with World ID"><i class="fill"></i><span>Hold, then verify with World ID</span></button></div></div>
     <div id="qr"></div><div class="out" id="out"></div>`;
 }
@@ -552,21 +557,21 @@ function holdToConfirm(btn, ms, done) {
   btn.addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") cancel(); });
 }
 
+let worldidPopup = null;
 /** One approve path for Queue and Demo. World ID for Agents opens in a popup so the agent's stream keeps running. */
 async function approveVia(r, name, ui) {
   const out = ui.out, say = (t) => out && (out.textContent = t);
   if (cfg.worldIdAgents && cfg.worldIdMode !== "mock" && via === "oidc") {
     const url = `/approvals/${r.id}/oidc?approverName=${encodeURIComponent(name)}`;
-    const w = window.open(url, "worldid", "popup,width=520,height=720");
+    const w = (worldidPopup = window.open(url, "worldid", "popup,width=520,height=720"));
     if (!w) { location.href = url; return; }
     say("World ID for Agents sign-in opened… (the gateway verifies the ID token, then checks the ENS role)");
     return;
   }
   if (cfg.worldIdMode === "mock") {
     const d = await post(`/approvals/${r.id}/verify`, { mock:true, nullifier:who.nullifier, approverName:who.name });
-    say(d.status === "approved" ? "" : `${d.status}: ${d.reason ?? ""}`);
-    if (d.status !== "approved") sealFlash();
-    return;
+    if (!["approved", "partial"].includes(d.status)) sealFlash();
+    return grantMsg(d);
   }
   try {
     say("Preparing World ID request…");
@@ -579,12 +584,17 @@ async function approveVia(r, name, ui) {
     if (ui.qr) ui.qr.innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App.<br/>The proof is bound to this exact payload.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
     say("Waiting for World App…");
     const res = await req.pollUntilCompletion({ timeout:120000 });
-    if (!res.success) { say("World ID: " + res.error); return; }
+    if (!res.success) return "World ID: " + res.error;
     const d = await post(`/approvals/${r.id}/verify`, { ...res.result, approverName:name });
-    say(d.status === "approved" ? "" : `${d.status}: ${d.reason ?? ""}`);
-  } catch (e) { say("World ID failed: " + e.message); }
+    return grantMsg(d);
+  } catch (e) { return "World ID failed: " + e.message; }
 }
-const approve = (r) => approveVia(r, $("#approverName")?.value.trim() ?? "", { out:$("#out"), qr:$("#qr") });
+const approve = async (r) => {
+  const msg = await approveVia(r, $("#approverName")?.value.trim() ?? "", { out:$("#out"), qr:$("#qr") });
+  if (msg === undefined) return; // World ID for Agents: the popup reports back
+  await show(r.id); // fresh pane: the hold button is ready for the next approver
+  if (msg && $("#out")) $("#out").textContent = msg;
+};
 
 async function loadIDKit() {
   if (window.IDKit) return window.IDKit;
@@ -677,6 +687,7 @@ const POLICY_HINT = {
   "airlock.models":"frontier models it may use",
   "airlock.approverRole":"who can approve",
   "airlock.ownerRole":"who approves high-risk",
+  "airlock.highRiskQuorum":"different humans for high risk",
 };
 const ensApp = (n) => `<a href="https://app.ens.dev/${encodeURIComponent(n)}" target="_blank">${esc(n)}</a>`;
 const scan = (a) => `<a href="https://sepolia.etherscan.io/address/${a}" target="_blank" class="mono">${a.slice(0, 8)}…${a.slice(-4)}</a>`;
@@ -689,7 +700,9 @@ async function loadEns() {
   $("#ensTitle").innerHTML = ensApp(root);
   $("#ensSub").innerHTML = `resolver ${s.resolver ? scan(s.resolver) : "—"}${s.approverRegistry ? ` · approver registry ${scan(s.approverRegistry)}` : ""}`;
   const writer = (k) => { const w = s.access.filter((a) => a.canWrite[k]).map((a) => a.label); return `<span style="display:flex; gap:4px; justify-content:flex-end">${w.length ? w.map((l) => `<span class="wr ${l === "security" ? "sec" : "gw"}">${l}</span>`).join("") : `<span class="wr">nobody</span>`}</span>`; };
-  $("#ensPolicy").innerHTML = `<div class="rec"><span class="k">agent</span><span class="v">${ensApp(s.agent)}</span><span></span></div>` +
+  $("#ensAgents").innerHTML = `<table class="matrix"><tr><th>agent</th><th>policy comes from</th><th>record</th><th>maxClass</th><th>egress</th><th>high-risk quorum</th></tr>` +
+    (s.agents ?? []).map((a) => `<tr><td>${ensApp(a.name)}</td><td style="text-align:left">${a.source.startsWith("linked") ? `🔗 linked → ${ensApp(s.sharedPolicy)}` : a.source.startsWith("org default") ? "✳︎ org default (wildcard · not registered)" : esc(a.source)}</td><td class="mono">#${esc(a.recordId)}</td><td>${esc(a.maxClass ?? "—")}</td><td>${esc(a.egress ?? "—")}</td><td>${esc(a.quorum ?? "1")}</td></tr>`).join("") + "</table>";
+  $("#ensPolicy").innerHTML = `<div class="rec"><span class="k">agent</span><span class="v">${ensApp(s.agent)}${s.sharedPolicy && (s.agents ?? []).some((a) => a.name === s.agent && a.source.startsWith("linked")) ? `<br><span class="muted" style="font-size:12px">🔗 linked → ${ensApp(s.sharedPolicy)} (shared record)</span>` : ""}</span><span></span></div>` +
     Object.entries(s.policy).map(([k, v]) => `<div class="rec"><span class="k">${esc(k.replace("airlock.", ""))}<br><span class="hint">${esc(POLICY_HINT[k] ?? "")}</span></span><span class="v">${v ? esc(v) : '<span class="muted">— (fail-closed)</span>'}</span>${writer(k)}</div>`).join("");
   const a = s.audit;
   $("#ensAudit").innerHTML = `<div class="anchor-state ${a.anchored ? "yes" : "muted"}">${a.anchored ? "✓ on-chain root matches the local ledger" : "● new decisions since the last anchor"}</div>
@@ -703,8 +716,11 @@ async function loadEns() {
   const role = s.approverRole || `legal.approvers.${root}`;
   $("#ensTree").innerHTML = [
     `${ensApp(root)}`,
-    `├─ ${ensApp("agents." + root)}`,
-    `│   └─ ${ensApp(s.agent)}   ← policy`,
+    `├─ ${ensApp("agents." + root)}   ← wildcard: unregistered agents get the org default`,
+    `│   ├─ ${ensApp(s.agent)}   ← 🔗 legal policy`,
+    `│   └─ ${ensApp(s.agent.replace(/^[^.]+/, "nda-agent"))}   ← 🔗 legal policy`,
+    `├─ ${ensApp("policies." + root)}`,
+    `│   └─ ${ensApp("legal.policies." + root)}   ← shared policy record`,
     `├─ ${ensApp("approvers." + root)}`,
     `│   └─ ${ensApp(role)}   ← approver role`,
     `│       └─ ${ensApp("alice." + role)}   ← approver`,
@@ -739,7 +755,8 @@ const SCENES = () => [
   { t:"Confidential", why:"Second opinion on the liability cap before tomorrow's negotiation.", title:"Confidential data waits for a human", note:"De-identified first: names, money and email become labels (ORG·1, PERSON·1…). You can read the names; the model only gets the labels. Hold to approve with World ID for Agents; the answer streams back with the real names restored.", prompt:CONTRACT, approver:"alice" },
   { t:"Seal", why:"Second opinion on the liability cap before tomorrow's negotiation.", title:"Seal it: nothing leaves", note:"Same request, but the reviewer presses Seal (or cancels at World). The frontier model never sees it; the local model answers instead.", prompt:CONTRACT, approver:"alice", hint:"Press Seal" },
   { t:"Revoked", why:"Second opinion on the liability cap before tomorrow's negotiation.", title:"A verified human whose role was revoked", note:"Carol is a real human, but her ENS approver subname has been unregistered. World ID passes, the ENS role check fails, and nothing is sent.", prompt:CONTRACT, approver:"carol", pre:{ label:"Revoke carol on ENS", run:revokeCarol } },
-  { t:"Re-identification", why:"Prep for Thursday's pricing call.", title:"Re-identification test: context gives it away", note:"TSMC is de-identified to ORG·1, but the surrounding text still describes it. Before anything leaves, the local model plays attacker and tries to re-identify each label. It guesses the company, so risk goes high and only the data owner's role could approve.", prompt:"CONFIDENTIAL. Our client TSMC, the Hsinchu-based foundry that manufactures Apple's A-series chips and is the world's largest contract chipmaker, wants to renegotiate volume pricing. Draft two talking points.", approver:"alice", hint:"High risk → needs owners role → Seal" },
+  { t:"Two humans", why:"Prep for Thursday's pricing call.", title:"High risk needs two different humans", note:"TSMC is de-identified, but the context still gives it away, and the local re-identification test catches it. High risk, so the ENS policy (airlock.highRiskQuorum = 2) requires two different verified humans. Approve as alice, then as bob. The same person can't count twice: a repeated name is refused, and with World App QR even a different name on the same World ID is refused.", prompt:"CONFIDENTIAL. Our client TSMC, the Hsinchu-based foundry that manufactures Apple's A-series chips and is the world's largest contract chipmaker, wants to renegotiate volume pricing. Draft two talking points.", approver:"alice", hint:"Approve as alice, then bob" },
+  { t:"New agent", agent:"intern-bot", why:"Quick summary for the team.", title:"A brand-new agent is safe by default", note:"intern-bot.agents.airlock.eth was never registered. ENSv2 wildcard resolution gives it the org's default policy record (internal data only), so confidential data can't leave with zero setup. contract-agent and nda-agent instead link to one shared policy record: edit it once and both change.", prompt:CONTRACT },
   { t:"Proof", title:"Every decision is on the record", note:"The ledger is a hash chain; its Merkle root is anchored to audit.airlock.eth. The agent's policy and who may change it live in ENS.", proof:true },
 ];
 let sceneIdx = 0, demo = { inflight:false, id:null, meta:null, session:null, done:new Set() }, deidView = "readable";
@@ -761,7 +778,9 @@ function renderScene() {
   $("#sceneNo").textContent = `Scene ${sceneIdx + 1} of ${SCENES().length}`;
   $("#sceneTitle").textContent = x.title;
   $("#sceneNote").textContent = x.note;
-  $("#demoAgent").textContent = cfg.defaultAgent ?? "";
+  const agents = [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")];
+  $("#demoAgent").innerHTML = agents.map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
+  $("#demoAgent").value = x.agent ? cfg.defaultAgent.replace(/^[^.]+/, x.agent) : cfg.defaultAgent;
   const acts = [];
   if (x.pre) acts.push(`<button class="btn" id="scenePre">${esc(x.pre.label)}</button>`);
   if (x.proof) acts.push(`<button class="btn" id="goLedger">Verify chain</button><button class="btn" id="goEns">Open ENS</button><button class="btn dark" id="goAnchor">Anchor to ENS</button>`);
@@ -809,7 +828,7 @@ async function demoSend(text, history, scene) {
   renderAirlock(null, "checking");
   let answer = "";
   try {
-    const headers = { "content-type":"application/json", "x-airlock-session":demo.session, "x-airlock-user":encodeURIComponent($("#demoUser").value.trim()) };
+    const headers = { "content-type":"application/json", "x-airlock-session":demo.session, "x-airlock-agent":$("#demoAgent").value, "x-airlock-user":encodeURIComponent($("#demoUser").value.trim()) };
     if ($("#demoWhy").value.trim()) headers["x-airlock-justification"] = encodeURIComponent($("#demoWhy").value.trim());
     const res = await fetch("/v1/chat/completions", { method:"POST", headers, body:JSON.stringify({ model:`airlock/${cfg.defaultClaudeModel}`, stream:true, messages }) });
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader(); let buf = "";
@@ -834,6 +853,15 @@ function renderTrace(a) {
 }
 const whoAsks = (r) => r.requester || r.justification
   ? `<div class="who-asks"><b>${esc(r.requester || "Someone")}</b> asks to send this to ${esc(r.targetModel)}${r.justification ? `<q>${esc(r.justification)}</q>` : ""}</div>` : "";
+/** Two-person rule: who has approved, and how many different humans are still needed. */
+function quorumHTML(r) {
+  const need = r.quorum ?? 1; if (need < 2) return "";
+  const got = r.approvals ?? [];
+  const slots = Array.from({ length:need }, (_, i) => got[i] ? `<span class="slot ok">✓ ${esc((got[i].approverName ?? "").split(".")[0])}</span>` : `<span class="slot">human ${i + 1}</span>`).join("");
+  return `<div class="quorum"><b>Needs ${need} different humans</b>${slots}<span class="muted">World ID proves they're distinct people; ENS proves each holds the role.</span></div>`;
+}
+const nextApprover = (r, fallback) => { const used = new Set((r.approvals ?? []).map((a) => (a.approverName ?? "").split(".")[0])); return ["alice", "bob", "carol"].find((n) => !used.has(n)) ?? fallback; };
+const grantMsg = (d) => d.status === "approved" ? "" : d.status === "partial" ? `✓ Counted ${d.have} of ${d.need}. A second, different human must approve.` : d.reason ?? `${d.status}`;
 const STATE = { pending:["held", "Held at the door"], approved:["cleared", "Cleared"], denied:["sealed", "Sealed"], expired:["sealed", "Expired"], role_invalid:["sealed", "Role check failed"], proof_invalid:["sealed", "Proof rejected"] };
 async function renderAirlock(r, phase) {
   const box = $("#demoAirlock");
@@ -858,8 +886,9 @@ async function renderAirlock(r, phase) {
   let bottom;
   if (r.status === "pending") {
     // Only pre-fill when the scene's approver actually holds this role (scene 5 needs a data owner nobody holds).
-    const name = r.requiredRole === role() ? `${x.approver ?? "alice"}.${r.requiredRole}` : "";
+    const name = r.requiredRole === role() ? `${(r.quorum ?? 1) > 1 ? nextApprover(r, x.approver ?? "alice") : x.approver ?? "alice"}.${r.requiredRole}` : "";
     bottom = `<div class="demo-decide">
+      ${quorumHTML(r)}
       <label class="eyebrow" style="margin:0">Approver (ENS) · needs <span class="mono">${esc(r.requiredRole)}</span></label>
       <div class="approver-row"><input class="field" id="demoApprover" value="${esc(name)}" placeholder="no one holds ${esc(r.requiredRole)} yet" />${viaToggle()}</div>
       <div class="hint-row">${x.hint ? `<span class="muted">▸ ${esc(x.hint)}</span>` : "<span></span>"}<button class="linkish" id="demoNoteToggle">+ Add a note for the requester</button></div>
@@ -867,7 +896,8 @@ async function renderAirlock(r, phase) {
       <div class="row2"><button class="seal" id="demoSeal" title="Deny: nothing is sent; the local model answers instead">Seal (deny)</button><button class="hold" id="demoHold" title="Press and hold ~1s, then verify with World ID"><i class="fill"></i><span>Hold, then verify with World ID</span></button></div>
       <div id="demoQr"></div><div class="out" id="demoOut"></div></div>`;
   } else {
-    bottom = `<div class="demo-verdict ${cls}"><b>${esc(label.toUpperCase())}</b>${esc(r.reason ?? (r.status === "approved" ? "Verified human with a live ENS approver role. Only the de-identified text above left the building." : ""))}</div>`;
+    const ppl = (r.approvals ?? []).map((a) => (a.approverName ?? "").split(".")[0]).filter(Boolean);
+    bottom = `<div class="demo-verdict ${cls}"><b>${esc(label.toUpperCase())}</b>${esc(r.reason ?? (r.status === "approved" ? `${ppl.length > 1 ? `${ppl.join(" and ")}, two different verified humans` : "A verified human"} with a live ENS approver role. Only the de-identified text above left the building.` : ""))}</div>`;
   }
   box.innerHTML = head(cls, label) + whoAsks(r) + chamberHTML(r) +
     `<div class="box-head"><p class="eyebrow">De-identified <span class="muted" style="text-transform:none; letter-spacing:0">· ${deidView === "readable" ? "names shown for you; the model only gets the labels" : "exactly what leaves the building"}</span></p>` +
@@ -879,7 +909,12 @@ async function renderAirlock(r, phase) {
     wireVia(box);
     $("#demoNoteToggle").onclick = () => { $("#demoNote").hidden = false; $("#demoNoteToggle").hidden = true; $("#demoNote").focus(); };
     $("#demoSeal").onclick = async () => { sealFlash(); await post(`/approvals/${r.id}/deny`, { reason:$("#demoNote").value.trim() || "sealed by reviewer" }); };
-    holdToConfirm($("#demoHold"), 1100, () => approveVia(r, $("#demoApprover").value.trim(), { out:$("#demoOut"), qr:$("#demoQr") }));
+    holdToConfirm($("#demoHold"), 1100, async () => {
+      const msg = await approveVia(r, $("#demoApprover").value.trim(), { out:$("#demoOut"), qr:$("#demoQr") });
+      if (msg === undefined) return; // World ID for Agents: the popup reports back
+      await demoApproval(r.id);
+      if (msg && $("#demoOut")) $("#demoOut").textContent = msg;
+    });
   }
 }
 /** Chamber for requests that never needed a human (auto / blocked). */
@@ -903,7 +938,7 @@ function heldCard(r) {
   const n = Object.values(r.entities).reduce((a, b) => a + b, 0);
   const [cls] = STATE[r.status] ?? ["held"];
   const text = {
-    pending:`<b>Held for approval</b>${n} field${n === 1 ? "" : "s"} de-identified · waiting for <span class="mono">${esc(r.requiredRole)}</span>. The answer appears here once approved.`,
+    pending:`<b>Held for approval</b>${n} field${n === 1 ? "" : "s"} de-identified · waiting for ${(r.quorum ?? 1) > 1 ? `<b style="display:inline;font:inherit;letter-spacing:0;text-transform:none">${r.quorum} different people</b> from ` : ""}<span class="mono">${esc(r.requiredRole)}</span>${(r.quorum ?? 1) > 1 ? ` (${r.approvals?.length ?? 0} so far)` : ""}. The answer appears here once approved.`,
     approved:`<b>Approved</b>Released to ${esc(r.targetModel)}. Only the de-identified text left.`,
     denied:`<b>Not sent</b>${esc((r.reason ?? "sealed").replace(/[.\s]+$/, ""))}. The local model answered instead.`,
     expired:`<b>Not sent</b>No approval in time. The local model answered instead.`,
@@ -921,7 +956,7 @@ $("#enrollGo").onclick = async () => {
   if (!name) { out.textContent = "Enter the approver's ENS name first."; return; }
   if (cfg.worldIdAgents && cfg.worldIdMode !== "mock" && via === "oidc") {
     const url = `/enroll/oidc?approverName=${encodeURIComponent(name)}`;
-    if (!window.open(url, "worldid", "popup,width=520,height=720")) location.href = url;
+    if (!(worldidPopup = window.open(url, "worldid", "popup,width=520,height=720"))) location.href = url;
     out.textContent = "World ID for Agents sign-in opened… the subname and commitment are written to ENS when it completes.";
     return;
   }
@@ -997,6 +1032,19 @@ function tick(decision) {
     if (demo.inflight && !$("#tab-demo").hidden && !demo.id) demoApproval(request.id);
     else toast("HELD AT THE DOOR", `${short(request.agent)} → ${request.targetModel}`, () => { tab("queue"); show(request.id); });
   });
+  es.addEventListener("approval.progress", (e) => {
+    const { request } = JSON.parse(e.data);
+    loadQueue();
+    if (request.id === selected) show(selected);
+    if (request.id === demo.id) demoApproval(request.id);
+    toast(`APPROVED ${request.approvals?.length ?? 1} OF ${request.quorum}`, "A second, different human must approve.");
+  });
+  es.addEventListener("approval.refused", async (e) => {
+    const { requestId, reason } = JSON.parse(e.data);
+    toast("NOT COUNTED", reason);
+    if (requestId === demo.id) { await demoApproval(requestId); if ($("#demoOut")) $("#demoOut").textContent = reason; }
+    if (requestId === selected && !$("#tab-queue").hidden) { await show(requestId); if ($("#out")) $("#out").textContent = reason; }
+  });
   es.addEventListener("approval.resolved", (e) => {
     const { request } = JSON.parse(e.data);
     loadQueue();
@@ -1005,7 +1053,21 @@ function tick(decision) {
     if (request.status !== "approved") sealFlash();
   });
   es.addEventListener("audit.appended", (e) => { tick(JSON.parse(e.data).decision); if (!$("#tab-ledger").hidden) loadLedger(); });
-  window.addEventListener("message", (e) => { if (e.origin === location.origin && e.data?.airlock === "worldid-done") { loadQueue(); if (demo.id) demoApproval(demo.id); if (!$("#tab-ens").hidden) loadEns(); } });
+  window.addEventListener("message", (e) => {
+    // World redirects to the public URL, so the popup's origin may differ from ours: trust the window we opened, not the origin.
+    if (e.data?.airlock !== "worldid-done" || (e.origin !== location.origin && e.source !== worldidPopup)) return;
+    // The popup closes itself; surface its verdict where the approver is looking.
+    const msg = `${e.data.title ?? ""}: ${e.data.text ?? ""}`;
+    toast(String(e.data.title ?? "World ID").toUpperCase(), e.data.text ?? "");
+    (async () => {
+      await loadQueue();
+      if (demo.id) await demoApproval(demo.id);
+      if (selected && !$("#tab-queue").hidden) await show(selected);
+      if (!$("#tab-ens").hidden) loadEns();
+      const out = !$("#tab-demo").hidden ? $("#demoOut") : !$("#tab-ens").hidden ? $("#enrollOut") : $("#out");
+      if (out && e.data.title && !/^Approved|^Enrolled/.test(e.data.title)) out.textContent = msg;
+    })();
+  });
 })();
 </script>
 </body>
