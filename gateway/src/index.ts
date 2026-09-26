@@ -5,7 +5,8 @@ import type { Hex } from "viem";
 import type { PolicyResolver, RoleRegistry } from "@airlock/core";
 import { dictionaryRecognizer, llmRecognizer, LocalAttackScorer, PipelineRedactor, presidioRecognizer, ruleRecognizer, RuleRiskScorer, type Recognizer } from "@airlock/redactor";
 import { ApprovalStore, MockVerifier, WorldIdVerifier, WorldOidc, type ProofVerifier } from "@airlock/approval";
-import { ensClient, EnsPolicyResolver, EnsRoleRegistry, EnsWriter, StaticPolicyResolver, StaticRoleRegistry } from "@airlock/registry";
+import { ensClient, EnsInspector, EnsPolicyResolver, EnsRoleRegistry, EnsWriter, StaticPolicyResolver, StaticRoleRegistry } from "@airlock/registry";
+import { privateKeyToAccount } from "viem/accounts";
 import { JsonlAuditLog } from "@airlock/audit";
 import { ClaudeModel, LocalModel, OpenAICompatModel, type FrontierModel } from "./llm";
 import { Pipeline } from "./pipeline";
@@ -35,13 +36,24 @@ if (env.REDACT_LLM === "1") recognizers.push(llmRecognizer(ask));
 const redactor = new PipelineRedactor(recognizers, (r, e) => console.warn(`[redactor] ${r} failed: ${(e as Error).message}`));
 
 // Policy + roles: ENS (Sepolia) when SEPOLIA_RPC_URL is set, else local JSON
-let policies: PolicyResolver, roles: RoleRegistry, writer: EnsWriter | undefined, ensMode: string;
+let policies: PolicyResolver, roles: RoleRegistry, writer: EnsWriter | undefined, ensMode: string, ens: EnsInspector | undefined;
 if (env.SEPOLIA_RPC_URL) {
   const client = ensClient(env.SEPOLIA_RPC_URL, env.ENS_UNIVERSAL_RESOLVER as Hex | undefined);
   if (env.ENS_PRIVATE_KEY && env.ENS_RESOLVER) writer = new EnsWriter(env.SEPOLIA_RPC_URL, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client, env.ENS_APPROVER_REGISTRY as Hex | undefined);
   policies = new EnsPolicyResolver(client);
   roles = new EnsRoleRegistry(client, writer);
   ensMode = writer ? "sepolia (read/write)" : "sepolia (read-only)";
+  const accounts = [
+    ...(env.ENS_PRIVATE_KEY ? [{ label: "gateway", address: privateKeyToAccount(env.ENS_PRIVATE_KEY as Hex).address }] : []),
+    ...(env.ENS_SECURITY_ADDRESS ? [{ label: "security", address: env.ENS_SECURITY_ADDRESS as Hex }] : []),
+  ];
+  ens = new EnsInspector(client, {
+    resolver: env.ENS_RESOLVER as Hex | undefined,
+    agent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
+    auditName: env.ENS_AUDIT_NAME ?? "audit.acme.eth",
+    accounts,
+    approverRegistry: env.ENS_APPROVER_REGISTRY as Hex | undefined,
+  });
 } else {
   policies = new StaticPolicyResolver(path(env.POLICY_FILE ?? "demo/policies.json"));
   const approversFile = path(env.APPROVERS_FILE ?? "data/approvers.json");
@@ -107,6 +119,7 @@ const app = buildApp({
   roles,
   verifier,
   oidc,
+  ens,
   // The event sandbox mints a fresh `sub` per sign-in, so identity↔role binding can only be enforced on production.
   oidcBinding: (env.WORLD_OIDC_BINDING as "commitment" | "name" | undefined) ?? (oidc && /sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment"),
   localModel: local.model,

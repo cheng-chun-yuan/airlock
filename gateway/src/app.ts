@@ -30,6 +30,8 @@ export interface AppDeps {
   ensLink?: (root: string) => string;
   /** When set, every route except health / static IDKit / OIDC callback needs this token. */
   accessToken?: string;
+  /** Live ENS view for the Console (ENS mode only). */
+  ens?: { status(localRoot: string): Promise<unknown>; approver(name: string, role?: string): Promise<unknown> };
 }
 
 const enrollSignal = (name: string) => `airlock-enroll:${name}`;
@@ -181,6 +183,9 @@ export function buildApp(d: AppDeps) {
     const root = d.audit.merkleRoot();
     return c.json({ records: d.audit.list(), chain: d.audit.verify(), merkleRoot: root, ensLink: d.ensLink?.(root) });
   });
+  app.get("/ens", async (c) => (d.ens ? c.json(await d.ens.status(d.audit.merkleRoot())) : c.json({ error: "ENS not configured (static JSON mode)" }, 404)));
+  app.get("/ens/approver", async (c) => (d.ens ? c.json(await d.ens.approver(c.req.query("name") ?? "", c.req.query("role"))) : c.json({ error: "ENS not configured" }, 404)));
+
   app.post("/audit/anchor", async (c) => {
     try {
       return c.json(await d.audit.anchor());

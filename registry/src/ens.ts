@@ -145,3 +145,50 @@ export class EnsWriter {
     return this.write("unregister", [BigInt(keccak256(toBytes(label)))]);
   }
 }
+
+const inspectAbi = parseAbi([
+  "function roles(uint256 resource, address account) view returns (uint256)",
+]);
+const ROLE_SET_TEXT = 1n << 4n;
+export const POLICY_KEYS = ["airlock.maxClass", "airlock.egress", "airlock.models", "airlock.approverRole", "airlock.ownerRole"];
+export const GATEWAY_KEYS = ["airlock.approver", "airlock.auditRoot"];
+
+/** Read-only view of Airlock's ENS state for the Console: records, anchor, and who may write which key. */
+export class EnsInspector {
+  constructor(
+    private client: PublicClient,
+    private cfg: { resolver?: Hex; agent: string; auditName: string; accounts: { label: string; address: Hex }[]; approverRegistry?: Hex },
+  ) {}
+
+  async status(localRoot: string) {
+    const { agent, auditName, resolver } = this.cfg;
+    const policy = Object.fromEntries(await Promise.all(POLICY_KEYS.map(async (k) => [k, await text(this.client, agent, k)] as const)));
+    const auditRoot = await text(this.client, auditName, "airlock.auditRoot");
+    const keys = [...POLICY_KEYS, ...GATEWAY_KEYS];
+    const access = resolver
+      ? await Promise.all(
+          this.cfg.accounts.map(async ({ label, address }) => {
+            const read = (resource: bigint) => this.client.readContract({ address: resolver, abi: inspectAbi, functionName: "roles", args: [resource, address] }).catch(() => 0n);
+            const root = await read(0n);
+            const perKey = await Promise.all(keys.map(async (k) => [k, !!((root | (await read(BigInt(keccak256(toBytes(k)))))) & ROLE_SET_TEXT)] as const));
+            return { label, address, admin: (root & (ROLE_SET_TEXT << 128n)) !== 0n, canWrite: Object.fromEntries(perKey) };
+          }),
+        )
+      : [];
+    return {
+      agent,
+      policy,
+      approverRole: policy["airlock.approverRole"],
+      audit: { name: auditName, onChain: auditRoot, local: localRoot, anchored: !!auditRoot && auditRoot.toLowerCase() === localRoot.toLowerCase() },
+      resolver,
+      approverRegistry: this.cfg.approverRegistry,
+      access,
+    };
+  }
+
+  async approver(name: string, role?: string) {
+    const record = await text(this.client, name, "airlock.approver");
+    const under = role ? normalize(name).endsWith("." + normalize(role)) : true;
+    return { name, record, underRole: under, status: !under ? "not under role" : record ? "live" : "not registered / revoked" };
+  }
+}
