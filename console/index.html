@@ -1038,9 +1038,21 @@ function tick(decision) {
   else if (hash === "enroll") tab("ens");
   else { selected = hash; tab("queue"); show(selected); }
 
-  const es = new EventSource("/events");
-  es.onopen = () => { $("#live").classList.add("on"); $("#liveTxt").textContent = "live"; };
-  es.onerror = () => { $("#live").classList.remove("on"); $("#liveTxt").textContent = "reconnecting"; };
+  // Live updates by polling a numbered event log: works through any proxy (Cloudflare tunnels buffer idle
+  // SSE GETs). Events are dispatched to the same listeners an EventSource would use.
+  const es = new EventTarget();
+  (async function poll() {
+    let cursor;
+    for (;;) {
+      try {
+        const r = await j(`/events/poll${cursor === undefined ? "" : `?after=${cursor}`}`);
+        if (cursor !== undefined) for (const { e } of r.events) es.dispatchEvent(new MessageEvent(e.type, { data:JSON.stringify(e) }));
+        cursor = r.cursor;
+        $("#live").classList.add("on"); $("#liveTxt").textContent = "live";
+      } catch { $("#live").classList.remove("on"); $("#liveTxt").textContent = "reconnecting"; }
+      await new Promise((ok) => setTimeout(ok, 1500));
+    }
+  })();
   es.addEventListener("approval.created", (e) => {
     const { request } = JSON.parse(e.data);
     loadQueue();

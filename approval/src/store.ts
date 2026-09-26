@@ -20,8 +20,21 @@ export class ApprovalStore extends EventEmitter implements Approver {
     this.setMaxListeners(100);
   }
 
+  /** Numbered log of recent events: lets clients behind proxies that buffer SSE poll instead. */
+  private log: { id: number; e: AirlockEvent }[] = [];
+  private nextId = 1;
+
   emitEvent(e: AirlockEvent) {
+    this.log.push({ id: this.nextId++, e });
+    if (this.log.length > 500) this.log.splice(0, this.log.length - 500);
     this.emit("event", e);
+  }
+
+  /** Events after `after` (and the cursor to use next). With no `after`, just the current cursor. */
+  since(after?: number) {
+    const cursor = this.nextId - 1;
+    if (after === undefined || Number.isNaN(after)) return { cursor, events: [] as { id: number; e: AirlockEvent }[] };
+    return { cursor, events: this.log.filter((x) => x.id > after) };
   }
 
   get(id: string) {

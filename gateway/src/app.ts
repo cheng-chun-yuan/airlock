@@ -41,6 +41,17 @@ export interface AppDeps {
 
 const enrollSignal = (name: string) => `airlock-enroll:${name}`;
 
+/**
+ * Proxies (Cloudflare tunnels, nginx) buffer or compress text/event-stream unless told not to, which silently
+ * breaks live updates and token streaming. no-transform stops compression; X-Accel-Buffering stops nginx-style
+ * buffering; a padding comment pushes the first bytes through any remaining buffer.
+ */
+function unbuffered(c: { header: (k: string, v: string) => void }) {
+  c.header("Cache-Control", "no-cache, no-transform");
+  c.header("X-Accel-Buffering", "no");
+}
+const PADDING = ":" + " ".repeat(2048) + "\n\n";
+
 export type GrantOutcome =
   | { status: "approved" | "partial"; have: number; need: number; roleCheck: RoleCheck }
   | { status: "role_invalid" | "same-human" | "same-name" | "not-pending"; have: number; need: number; roleCheck?: RoleCheck; reason: string };
@@ -137,7 +148,9 @@ export function buildApp(d: AppDeps) {
       const base = { id: `chatcmpl-${airlock.requestId}`, object: "chat.completion.chunk", created, model: served };
       c.header("x-airlock-route", airlock.route);
       c.header("x-airlock-decision", airlock.decision);
+      unbuffered(c);
       return streamSSE(c, async (s) => {
+        await s.write(PADDING);
         s.onAbort(() => hangup.abort());
         await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }], airlock }) });
         for await (const ch of chunks) {
@@ -163,7 +176,9 @@ export function buildApp(d: AppDeps) {
         usage: completion.usage,
         airlock,
       });
-    return streamSSE(c, async (s) => {
+    unbuffered(c);
+      return streamSSE(c, async (s) => {
+        await s.write(PADDING);
       const base = { id, object: "chat.completion.chunk", created, model: completion.model };
       await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: completion.message.content ?? "", ...(completion.message.tool_calls && { tool_calls: completion.message.tool_calls.map((t, index) => ({ index, ...t })) }) }, finish_reason: null }] }) });
       await s.writeSSE({ data: JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: completion.finishReason }] }) });
@@ -219,8 +234,17 @@ export function buildApp(d: AppDeps) {
     return ok ? c.json({ ok }) : c.json({ error: "not pending" }, 409);
   });
 
-  app.get("/events", (c) =>
-    streamSSE(c, async (s) => {
+  // Same events as /events, by polling: Cloudflare quick tunnels hold long-lived idle GET streams, so the
+  // Console polls this (1.5 s) and dispatches to the same handlers.
+  app.get("/events/poll", (c) => {
+    const after = c.req.query("after");
+    return c.json(d.approvals.since(after === undefined ? undefined : Number(after)));
+  });
+
+  app.get("/events", (c) => {
+    unbuffered(c);
+    return streamSSE(c, async (s) => {
+      await s.write(PADDING);
       const on = (e: AirlockEvent) => void s.writeSSE({ event: e.type, data: JSON.stringify(e) });
       d.approvals.on("event", on);
       s.onAbort(() => void d.approvals.off("event", on));
@@ -228,8 +252,8 @@ export function buildApp(d: AppDeps) {
         await s.writeSSE({ event: "ping", data: "{}" });
         await s.sleep(15_000);
       }
-    }),
-  );
+    });
+  });
 
   // ---------- Audit ----------
   app.get("/audit", (c) => {
