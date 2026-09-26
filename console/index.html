@@ -262,6 +262,20 @@
   .composer-meta { display:grid; grid-template-columns:200px 1fr; gap:8px; margin-top:10px; }
   .composer-meta .field { font-size:12.5px; padding:7px 10px; }
   .stats { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 0; }
+  /* First-run checklist on a new gateway's Overview */
+  .start { border:1px solid var(--hairline); border-radius:14px; padding:18px; margin:0 0 16px; background:var(--haze); }
+  .start-head { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+  .start-head h3 { margin:0; font:500 19px var(--display); }
+  .start-head p { margin:4px 0 0; font-size:13.5px; color:var(--umber); }
+  .start-bar { height:4px; border-radius:99px; background:var(--hairline); margin:14px 0 6px; overflow:hidden; } .start-bar i { display:block; height:100%; background:var(--ember); border-radius:99px; transition:width .4s ease; }
+  .start ol { list-style:none; margin:0; padding:0; }
+  .start li { display:grid; grid-template-columns:24px minmax(0, 1fr) auto; gap:12px; align-items:center; padding:12px 0; border-top:1px solid var(--hairline); }
+  .start li:first-child { border-top:0; }
+  .start .tick { width:22px; height:22px; border-radius:99px; border:1.5px solid var(--sand); display:grid; place-items:center; font:600 11px var(--mono); color:var(--umber); background:var(--canvas); }
+  .start li.done .tick { background:var(--go); border-color:var(--go); color:var(--canvas); }
+  .start li b { display:block; font:500 14.5px var(--body); } .start li span.d { display:block; font-size:13px; color:var(--umber); }
+  .start li.done b { color:var(--umber); text-decoration:line-through; text-decoration-color:var(--sand); }
+  @media (max-width: 560px) { .start li { grid-template-columns:24px minmax(0, 1fr); } .start li .btn { grid-column:2; justify-self:start; } }
   .stat { border:1px solid var(--hairline); border-radius:10px; padding:6px 12px; font-size:12.5px; color:var(--umber); } .stat b { display:block; font:600 18px var(--display); color:var(--ink); }
   .bell { border:1px solid var(--hairline); background:var(--canvas); border-radius:99px; padding:4px 10px; font:500 11px var(--mono); color:var(--umber); cursor:pointer; }
   .bell.on { color:var(--go); border-color:var(--go); }
@@ -453,6 +467,7 @@
       <div><p class="eyebrow">Overview</p><h2 id="ovTitle">—</h2><p class="muted" id="ovSub" style="margin:4px 0 0"></p></div>
       <div style="display:flex; gap:8px"><button class="btn" id="ovRefresh">Refresh</button></div>
     </div>
+    <div id="ovStart"></div>
     <div class="stats" id="ovStats"></div>
     <div class="ens-grid" style="margin-top:16px">
       <div class="panel"><h3>Waiting for approval</h3><div id="ovPending"></div></div>
@@ -503,7 +518,7 @@
       <div style="display:flex; gap:8px"><button class="btn" id="ensRefresh">Refresh</button></div>
     </div>
     <div class="ens-grid">
-      <div class="panel" id="ensAgentsPanel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.</p><div id="ensAgents"></div></div>
+      <div class="panel" id="ensAgentsPanel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" id="ensAgentsNote" style="margin:-4px 0 10px; font-size:13px">Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.</p><div id="ensAgents"></div></div>
       <div class="panel"><h3>Policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the egress policy. Change one on-chain (Settings, or any ENS app with the owner's wallet) and the next request obeys it.</p><div id="ensPolicy"></div></div>
       <div class="panel"><h3>Who may change what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (read from the live contract).</p><div id="ensAccess"></div></div>
       <div class="panel"><h3>Audit anchor</h3><div id="ensAudit"></div></div>
@@ -614,7 +629,9 @@ async function loadQueue() {
   $("#nPending").textContent = pending || "";
   document.title = pending ? `(${pending}) Airlock` : "Airlock";
   if (!items.length) {
-    $("#list").innerHTML = `<div class="empty"><b>The chamber is empty.</b><br/>Confidential requests wait here for a human. Nothing is waiting for a reviewer. Send a confidential request from the <a href="#" onclick="tab('playground');return false">Playground</a> or any connected agent.</div>`;
+    $("#list").innerHTML = isDemo()
+      ? `<div class="empty"><b>The chamber is empty.</b><br/>Confidential requests wait here for a human. Nothing is waiting for a reviewer. Send a confidential request from the <a href="#" onclick="tab('playground');return false">Playground</a> or any connected agent.</div>`
+      : `<div class="empty"><b>No approval requests yet.</b><br/>When someone in ${esc(cfg.name)} sends confidential data, the request waits here until an enrolled approver decides. Try one from the <a href="#" onclick="tab('playground');return false">Playground</a>, or <a href="#" onclick="tab('connect');return false">connect an agent</a>.</div>`;
   } else {
     $("#list").innerHTML = items.map((r) => {
       const masked = Object.values(r.entities).reduce((a, b) => a + b, 0);
@@ -918,7 +935,7 @@ async function loadEns() {
   $("#ensSub").innerHTML = `resolver ${s.resolver ? scan(s.resolver) : "—"}${s.approverRegistry ? ` · approver registry ${scan(s.approverRegistry)}` : ""}`;
   const writer = (k) => { const w = s.access.filter((a) => a.canWrite[k]).map((a) => a.label); return `<span style="display:flex; gap:4px; justify-content:flex-end">${w.length ? w.map((l) => `<span class="wr ${l === "security" ? "sec" : "gw"}">${l}</span>`).join("") : `<span class="wr">nobody</span>`}</span>`; };
   $("#ensAgents").innerHTML = `<table class="matrix"><tr><th>agent</th><th>policy comes from</th><th>record</th><th>maxClass</th><th>egress</th><th>high-risk quorum</th></tr>` +
-    (s.agents ?? []).map((a) => `<tr><td>${ensApp(a.name)}</td><td style="text-align:left">${a.linkedTo ? `🔗 linked → ${ensApp(a.linkedTo)}` : a.source.startsWith("org default") ? `✳︎ ${isDemo() ? "org" : "gateway"} default (wildcard · not registered)` : esc(a.source)}</td><td class="mono">#${esc(a.recordId)}</td><td>${esc(a.maxClass ?? "—")}</td><td>${esc(a.egress ?? "—")}</td><td>${esc(a.quorum ?? "1")}</td></tr>`).join("") + "</table>";
+    (s.agents ?? []).map((a) => `<tr><td>${ensApp(a.name)}</td><td style="text-align:left">${a.linkedTo ? `🔗 linked → ${ensApp(a.linkedTo)}` : a.source.startsWith("org default") ? (isDemo() ? `✳︎ org default (wildcard · not registered)` : `✳︎ gateway policy (wildcard)`) : esc(a.source)}</td><td class="mono">#${esc(a.recordId)}</td><td>${esc(a.maxClass ?? "—")}</td><td>${esc(a.egress ?? "—")}</td><td>${esc(a.quorum ?? "1")}</td></tr>`).join("") + "</table>";
   $("#ensPolicy").innerHTML = `<div class="rec"><span class="k">agent</span><span class="v">${ensApp(s.agent)}${s.sharedPolicy && (s.agents ?? []).some((a) => a.name === s.agent && a.source.startsWith("linked")) ? `<br><span class="muted" style="font-size:12px">🔗 linked → ${ensApp(s.sharedPolicy)} (shared record)</span>` : ""}</span><span></span></div>` +
     Object.entries(s.policy).map(([k, v]) => `<div class="rec"><span class="k">${esc(k.replace("airlock.", ""))}<br><span class="hint">${esc(POLICY_HINT[k] ?? "")}</span></span><span class="v">${v ? esc(v) : '<span class="muted">— (fail-closed)</span>'}</span>${writer(k)}</div>`).join("");
   const a = s.audit;
@@ -931,6 +948,9 @@ async function loadEns() {
   $("#ensAccess").innerHTML = `<table class="matrix"><tr><th>record key</th>${s.access.map((x) => `<th>${esc(x.label === "gateway" ? "gateway (this server)" : x.label === "security" ? "security (policy owner)" : x.label)}<br><span class="muted" style="font-weight:400">${scan(x.address)}</span></th>`).join("")}</tr>` +
     keys.map((k) => `<tr><td>${esc(k)}</td>${s.access.map((x) => `<td class="${x.canWrite[k] ? "yes" : "no"}">${x.canWrite[k] ? "✓ write" : "✗"}</td>`).join("")}</tr>`).join("") + "</table>";
   const role = s.approverRole || `legal.approvers.${root}`;
+  $("#ensAgentsNote").innerHTML = isDemo()
+    ? `Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.`
+    : `Each agent follows the <b>gateway policy</b> (ENS wildcard) or is <b>linked</b> to a named policy. Edit a named policy once and every agent linked to it follows.`;
   if (!isDemo()) {
     $("#ensTitle").innerHTML = ensApp(cfg.org);
     $("#ensTree").innerHTML = [
@@ -1007,10 +1027,8 @@ function bubble(role, text) {
 }
 $("#demoSend").onclick = () => { const t = $("#demoInput").value.trim(); if (!t) return; $("#demoInput").value = ""; demo.session ??= `pg-${Math.random().toString(36).slice(2, 9)}`; demoSend(t, demo.history ?? []); };
 $("#pgNew").onclick = newConversation;
-$("#pgExample").onchange = () => {
-  const x = EXAMPLES[+$("#pgExample").value]; $("#pgExample").value = ""; if (!x) return;
-  $("#demoInput").value = x.prompt; $("#demoWhy").value = x.why ?? ""; $("#demoInput").focus();
-};
+function useExample(x) { if (!x) return; $("#demoInput").value = x.prompt; $("#demoWhy").value = x.why ?? ""; $("#demoInput").focus(); }
+$("#pgExample").onchange = () => { const x = EXAMPLES[+$("#pgExample").value]; $("#pgExample").value = ""; useExample(x); };
 $("#demoInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#demoSend").click(); });
 async function demoSend(text, history) {
   const messages = [...history, { role:"user", content:text }];
@@ -1195,9 +1213,13 @@ async function loadOverview() {
   const recs = a.records, day = Date.now() - 86400000, today = recs.filter((r) => r.timestamp > day);
   const c = (d, list = today) => list.filter((x) => x.decision === d).length;
   $("#ovTitle").textContent = isDemo() ? cfg.org ?? "Airlock" : cfg.name;
-  $("#ovSub").textContent = `${isDemo() ? "" : `${cfg.org} · `}Local AI by default. Frontier AI only with a verified human's consent. ${a.chain.ok ? "Audit chain intact." : `Audit chain broken at #${a.chain.brokenAt}.`}`;
+  const chain = a.chain.ok ? "Audit chain intact." : `Audit chain broken at #${a.chain.brokenAt}.`;
+  $("#ovSub").textContent = isDemo() ? `Local AI by default. Frontier AI only with a verified human's consent. ${chain}`
+    : `${cfg.org} · Requests run on your local model; confidential data leaves only when an enrolled approver agrees. ${chain}`;
+  paintStart(recs);
   $("#ovStats").innerHTML = [[today.length, "requests · 24h"], [c("auto"), "auto-sent"], [c("approved"), "approved"], [c("denied") + c("expired"), "sealed"], [c("blocked") + c("local"), "kept local"], [today.reduce((s, x) => s + (x.deidentified ?? 0), 0), "fields de-identified"]]
     .map(([v, l]) => `<div class="stat"><b>${v}</b>${l}</div>`).join("");
+  $("#ovStats").hidden = !isDemo() && !recs.length; // a new gateway gets the checklist, not a row of zeros
   const pend = q.filter((r) => r.status === "pending");
   $("#ovPending").innerHTML = pend.length ? pend.map((r) => `<div class="prow"><span><b>${esc(r.requester || short(r.agent))}</b> <span class="muted">→ ${esc(r.targetModel)} · risk ${esc(r.riskLevel)}${(r.quorum ?? 1) > 1 ? ` · ${r.approvals?.length ?? 0}/${r.quorum} approvals` : ""}</span></span><button class="btn" data-open="${r.id}">Review</button></div>`).join("")
     : `<div class="muted">Nothing waiting. Confidential requests appear here until a verified approver decides.</div>`;
@@ -1210,6 +1232,50 @@ async function loadOverview() {
   $("#ovStatus").innerHTML = Object.entries(s).map(([k, v]) => `<div class="srow ${v.ok ? "" : "bad"}"><span class="dot"></span><b>${esc(k)}</b><span class="muted mono" style="font-size:12px; word-break:break-all">${esc(v.detail)}</span></div>`).join("") || `<div class="muted">Status unavailable.</div>`;
 }
 $("#ovRefresh").onclick = loadOverview;
+
+/* ---------- first-run checklist (your own gateways) ---------- */
+// Each step is checked from live state, so it ticks itself off as the gateway gets used. Dismissal is per browser.
+const startKey = () => `airlock.start.dismissed.${GW}`;
+const startDismissed = () => { try { return localStorage.getItem(startKey()) === "1"; } catch { return false; } };
+let startSeq = 0;
+/** Run fn once the element a tab renders asynchronously exists (e.g. Members builds its panels after a fetch). */
+function whenReady(sel, fn, tries = 30) { const el = $(sel); if (el) fn(el); else if (tries) setTimeout(() => whenReady(sel, fn, tries - 1), 100); }
+async function paintStart(recs) {
+  const box = $("#ovStart"), seq = ++startSeq;
+  if (isDemo() || !cfg.me || startDismissed()) { box.innerHTML = ""; return; }
+  const admin = cfg.me.role === "admin", approver = canApprove();
+  const [keys, team] = await Promise.all([
+    j(`/api/gateways/${GW}/keys`).catch(() => []),
+    approver ? j(`/api/gateways/${GW}/members`).catch(() => []) : Promise.resolve([]),
+  ]);
+  if (seq !== startSeq) return; // a newer refresh already painted
+  const mine = Array.isArray(team) ? team.find((m) => m.address === cfg.me.address) : null;
+  const others = Array.isArray(team) ? team.filter((m) => m.address !== cfg.me.address) : [];
+  const steps = [
+    { id:"key", done:Array.isArray(keys) && keys.some((k) => k.mine), title:"Create an API key",
+      desc:"Point any OpenAI-compatible agent or app at this gateway with its own key.", cta:"Create key",
+      go:() => { tab("connect"); $("#keyName").focus(); } },
+    admin && { id:"invite", done:others.some((m) => ["approver", "admin"].includes(m.role)) || !!mine?.enrolled, title:"Invite an approver",
+      desc:"Someone has to release confidential requests. Invite a colleague as approver, or enroll yourself.", cta:"Invite",
+      go:() => { tab("approvers"); whenReady("#invRole", (el) => { el.value = "approver"; el.onchange?.(); el.scrollIntoView({ block:"center" }); }); } },
+    approver && mine?.approverName && { id:"enroll", done:!!mine.enrolled, title:"Enroll yourself with World ID",
+      desc:`One scan puts your approver name ${mine.approverName} on ENS, so you can approve held requests.`, cta:"Enroll",
+      go:() => { tab("approvers"); whenReady("#teamEnroll", (el) => el.scrollIntoView({ block:"center" })); } },
+    { id:"send", done:recs.length > 0, title:"Send a confidential request",
+      desc:"Try the contract-review example in the Playground: watch it get de-identified and held for approval.", cta:"Open Playground",
+      go:() => { tab("playground"); useExample(EXAMPLES.find((x) => x.label.startsWith("Contract review"))); } },
+  ].filter(Boolean);
+  const n = steps.filter((x) => x.done).length;
+  if (n === steps.length) { box.innerHTML = ""; return; }
+  const next = steps.find((x) => !x.done);
+  box.innerHTML = `<div class="start" role="region" aria-label="Get started">
+    <div class="start-head"><div><p class="eyebrow" style="margin:0 0 4px">Get started · ${n} of ${steps.length}</p><h3>Set up ${esc(cfg.name)}</h3><p>${admin ? "A few steps and your team's agents go through Airlock." : `${steps.length} steps to send your first request through Airlock.`}</p></div>
+      <button class="linkish" id="startDismiss" title="Hide this checklist in this browser">Dismiss</button></div>
+    <div class="start-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${n}"><i style="width:${Math.round((n / steps.length) * 100)}%"></i></div>
+    <ol>${steps.map((x, i) => `<li class="${x.done ? "done" : ""}"><span class="tick" aria-hidden="true">${x.done ? "✓" : i + 1}</span><div><b>${esc(x.title)}</b><span class="d">${esc(x.desc)}</span></div>${x.done ? `<span class="pill live">done</span>` : `<button class="btn ${x === next ? "dark" : ""}" data-start="${x.id}">${esc(x.cta)}</button>`}</li>`).join("")}</ol></div>`;
+  $$("[data-start]", box).forEach((b) => (b.onclick = () => steps.find((x) => x.id === b.dataset.start).go()));
+  $("#startDismiss").onclick = () => { try { localStorage.setItem(startKey(), "1"); } catch {} box.innerHTML = ""; };
+}
 
 /* ---------- approvers ---------- */
 async function loadApprovers() {
