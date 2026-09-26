@@ -83,7 +83,7 @@ const LEGAL = `legal.policies.${root}`;
 const LEGAL_POLICY: Record<string, string> = {
   "airlock.maxClass": "confidential",
   "airlock.egress": "approval",
-  "airlock.models": "gpt-*,claude-*",
+  "airlock.models": "gpt-*,claude-*,openai/gpt-*,anthropic/claude-*",
   "airlock.approverRole": `legal.approvers.${root}`,
   "airlock.highRiskQuorum": "2", // high risk: two *different* verified humans (World ID) must approve
 };
