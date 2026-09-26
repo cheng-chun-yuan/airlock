@@ -34,7 +34,7 @@ agent ──OpenAI API──▶  Router → Redactor → Risk (local attack test
 
 ## 🧑‍⚖️ For judges: the 3-minute tour
 
-Open the live demo. It lands on **Demo**: a 6-scene stepper, with the **agent** on the left and the **airlock** on the right. Press **Run scene ▸**, then **Next →**:
+Open the live demo. It lands on **Demo**: a 7-scene stepper, with the **agent** on the left and the **airlock** on the right. Press **Run scene ▸**, then **Next →**:
 
 | # | Scene | What happens |
 |---|---|---|
@@ -42,8 +42,9 @@ Open the live demo. It lands on **Demo**: a 6-scene stepper, with the **agent** 
 | 02 | Confidential | **De-identified**: names become labels like `ORG·1` (shown readable for you; flip to *As the model sees it*) → **held** → *World ID for Agents* → **hold** to approve → the answer streams back with the real names. |
 | 03 | Seal | Same request, sealed → the frontier model never sees it; the local model answers. |
 | 04 | Revoked | **Revoke carol on ENS** (Sepolia tx) → carol is a verified human but her role is gone → **role check failed**, nothing sent. |
-| 05 | Re-identification test | TSMC is de-identified, but the context gives it away → the local model re-identifies it → **high risk**, data-owner role required. |
-| 06 | Proof | **ENS** tab (live policy, who may write which record key, audit anchor) · **Walk the chain** · **Anchor to ENS**. |
+| 05 | Two humans | TSMC is de-identified, but the context gives it away → **high risk** → the ENS policy needs **two different humans**: alice ✓, the same person under another name ✗ (World ID), bob ✓ → released. |
+| 06 | New agent | `intern-bot` was never registered → ENSv2 wildcard → org default policy → confidential data **blocked**, with zero setup. |
+| 07 | Proof | **ENS** tab (agents linked to one shared policy, who may write which record key, audit anchor) · **Verify chain** · **Anchor to ENS**. |
 
 Other tabs: **Queue** (every held request with the full airlock chamber), **Ledger** (hash chain), **ENS** (live ENSv2 state, plus approver enroll and lookup).
 
@@ -68,6 +69,11 @@ Patterns borrowed from products teams already know: DLP policy tips with busines
 ## 🌍 World: Best Use of World ID for Agents
 
 **The trust moment:** an AI agent is about to send confidential text (client names, contract terms, money) to a third-party frontier model. It's the one point where "the agent decided" isn't enough, and the action can't be undone once the bytes leave. Airlock pauses the agent there and needs a **verified human, holding a live approver role, to approve this exact payload**.
+
+**The two-person rule, which only World ID can enforce without KYC.** When the re-identification test finds high risk, the agent's ENS policy (`airlock.highRiskQuorum = 2`) requires **two different humans**.
+- An account system can prove "two accounts" but not "two people", so one person with two logins could approve twice.
+- World ID's nullifier is fixed per person and action, so Airlock refuses **the same human under a second approver name**. Verified with real proofs: alice ✓ → "bob" on the same World ID ✗ *"same person"* → bob as a different human ✓ → released, and the audit records both approvers.
+- Airlock never learns who they are, only that they're two distinct verified humans who each hold the ENS role.
 
 **Why World ID for Agents (Human Continuity):**
 - Airlock needs to know that a **real human** consented to a specific agent action, not who that human is. Proof of personhood (`acr = …/orb-v3`) is the minimum sufficient assurance.
@@ -131,6 +137,9 @@ airlock.eth                                   UserRegistry (own subregistry), no
 | **Expiry + `unregister`** | Approvals expire with the subname. Revoking = unregistering → the next approval by that human is **denied**, and any session approval scope they opened ends too. |
 | **PermissionedResolver** (records keyed by name, `setText(bytes name, …)`) | One resolver serves every leaf. Policy, approver commitments and the audit root live there. |
 | **Enhanced Access Control** (per-record-key roles) | **Write access is split by record key.** A **security account** is the resolver's sole admin and the only key that can change policy records (`maxClass`, `egress`, `models`, `approverRole`, `ownerRole`). The **gateway** holds `ROLE_SET_TEXT` only on `airlock.approver` and `airlock.auditRoot` (granted with `grantSetterRoles`; its root roles are revoked), so a stolen gateway key can't loosen any agent's policy. Verified on-chain: gateway `setText(airlock.models)` reverts. Source: [`npm run ens:eac`](registry/scripts/ens-eac.ts). Subname tokens carry their own roles (unregister, renew, set resolver). |
+| **Record aliasing** (`linkToNode`) | `contract-agent` and `nda-agent` **link** to one shared record, `legal.policies.airlock.eth` (same record id #8). The security account edits the policy **once** and every linked agent follows; there's no per-agent drift. |
+| **Wildcard resolution + resolver default record** | `agents.airlock.eth` points at the resolver, and the resolver's default record (node 0) holds the **org default policy** (`maxClass = internal`). An agent that was **never registered** (e.g. `intern-bot`) resolves to it automatically, so confidential data can't leave with zero setup. Approver names stay revocable because their parents have no resolver. |
+| **Policy as records** | `airlock.highRiskQuorum = 2`: how many different humans must approve high-risk egress, set on-chain by the security account. |
 | **Universal Resolver v2** | The gateway reads everything through it, so any ENS client sees the same policy. |
 
 **Design finding:** the PermissionedResolver answers wildcard (ENSIP-10) lookups by full name. If a *parent* like `legal.approvers.airlock.eth` pointed at it, an **unregistered** `alice` would fall back to the parent's resolver and still resolve her commitment, so revocation would silently fail. **Only leaves get a resolver.** We verified on-chain that unregistering alone makes the approver resolve to nothing.
@@ -146,7 +155,12 @@ airlock.eth                                   UserRegistry (own subregistry), no
   - security admin grant [`0x07e6f01b…`](https://sepolia.etherscan.io/tx/0x07e6f01be423afa5acaeb25ea3f3a9b801c39c229fb87baa917da74ca42e05eb)
   - gateway per-key grants [`0x84f0d540…`](https://sepolia.etherscan.io/tx/0x84f0d54084bdc6808d8798881c7c1dc4a2936263fb676b6f345d6a4266f6f319) (approver) and [`0x7922fe04…`](https://sepolia.etherscan.io/tx/0x7922fe04130492363fa7c3a66aeee95bc52e230e719b28848a3575c822a8ce0a) (auditRoot)
   - gateway root roles revoked [`0x11d0c69d…`](https://sepolia.etherscan.io/tx/0x11d0c69dac2b0f20617731c7c07907ce3decbbd9dba1fb9e50292ab463a449fd)
-- **Reproduce the whole tree:** `npm run ens:setup -- <name> <approver>`, then `npm run ens:eac`. **Inspect it:** `npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth`.
+- **Shared policy + wildcard default** (Sepolia):
+  - legal policy written by security [`0xd36b3fbb…`](https://sepolia.etherscan.io/tx/0xd36b3fbb8582a95139bf7e839a78ed4de541445121d5655dbc2bd68705c371a5)
+  - links: contract-agent [`0x559d8ef1…`](https://sepolia.etherscan.io/tx/0x559d8ef13308a9d2eb62d2949a8024119b12d10305ddbbb267bb49884fd54512), nda-agent [`0x1893fe12…`](https://sepolia.etherscan.io/tx/0x1893fe128340ac36639b02028aee9b0c570702f290dfb121aeee8a8ac8291a94)
+  - org default record [`0x33709462…`](https://sepolia.etherscan.io/tx/0x33709462ee7a056aca907c280c767958ca4c80d7928f8bdb2107246eaaf9a4c4)
+  - `agents.airlock.eth` wildcard resolver [`0xb176e942…`](https://sepolia.etherscan.io/tx/0xb176e94254ea7520fdcca6a9b3712047389ffce153e0f12db7c355d95cf1ea4b)
+- **Reproduce the whole tree:** `npm run ens:setup -- <name> <approver>`, then `npm run ens:eac` and `npm run ens:policies`. **Inspect it:** `npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth`.
 
 **AI agents:** each agent is an ENS name whose records *are* its egress policy. Changing `airlock.models` or `airlock.egress` on-chain changes what the agent is allowed to do on the next request, with no redeploy.
 

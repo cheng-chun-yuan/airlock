@@ -59,13 +59,14 @@ Open the live demo. The Console lands on **Demo**: a 6-scene stepper on top, the
 
 | Time | Scene | Do | Say |
 |---|---|---|---|
-| 0:00 | (title) | Show the Demo tab | "Agents leak data the moment they call a frontier model. Airlock is the airlock between them, and it's also an ENS-governed, human-approved gateway." |
+| 0:00 | (title) | Show the Demo tab (7 scenes) | "Agents leak data the moment they call a frontier model. Airlock is the airlock between them, and it's also an ENS-governed, human-approved gateway." |
 | 0:15 | **01 Public** | Run | "Nothing sensitive, so it's sent automatically. Every decision is still audited." (Airlock: *Sent automatically*) |
 | 0:30 | **02 Confidential** | Run → point at the **De-identified** box → flip to **As the model sees it** → *World ID for Agents* → **hold** the button | "First we de-identify: names, money and email become labels. I can read them here; the model only ever gets `ORG·1`, `PERSON·1`, and the mapping never leaves the box. The local model already tried to re-identify them and failed, so risk is low. Policy comes from ENS: approval by someone holding `legal.approvers.airlock.eth`. A tap does nothing; I hold to open the outer door." → popup → **CLEARED**, the door opens, the answer streams with real names. |
 | 1:10 | **03 Seal** | Run → **Seal** | "Same request, but I seal it. The frontier model never sees it; the local model answers instead." |
 | 1:25 | **04 Revoked** | **Revoke carol on ENS** (Sepolia tx) → Run → hold | "Carol is a real human. I just unregistered her ENS approver subname. World ID passes, the ENS role check fails, and nothing is sent. Revocation is one on-chain call." |
-| 1:55 | **05 Re-identification test** | Run → **Seal** | "De-identification alone isn't enough. TSMC became `ORG·1`, but the context still describes it. Before anything leaves, our local model plays attacker, re-identifies it, and risk goes high: now only the data owner's role could approve." |
-| 2:20 | **06 Proof** | **Open ENS** → back → **Walk the chain** → **Anchor to ENS** | "The agent's policy *is* its ENS records. Only the security key can change them; the gateway may only write approvers and the audit root. That's ENSv2 Enhanced Access Control per record key. Every decision is hash-chained, and the root is anchored to `audit.airlock.eth`." |
+| 1:50 | **05 Two humans** | Run → approve as **alice** (World App QR) → try **bob on the same World ID** → approve as **bob** (World ID for Agents) | "TSMC is de-identified but the context gives it away, so risk is high, and our ENS policy says high risk needs **two different humans**. Alice approves: 1 of 2. Now 'bob' approves with the *same* World ID, and it's refused: World ID knows it's the same person, without knowing who. A real second human approves, and it goes out. An account system can't do that without KYC." |
+| 2:25 | **06 New agent** | Run (agent: `intern-bot`) | "This agent was never registered. ENSv2 wildcard resolution gives it the org's default policy, internal only, so confidential data is blocked with zero setup. The real agents link to one shared policy record: edit it once and both change." |
+| 2:40 | **07 Proof** | **Open ENS** (agents table, access matrix) → **Verify chain** → **Anchor to ENS** | "Policy, roles and the audit root all live in ENS. Only the security key can change policy, and every decision is hash-chained and anchored to `audit.airlock.eth`." |
 | 2:50 | (end) | | "Local AI by default. Frontier AI by human consent. Accountability on-chain." |
 
 ## Pre-demo checklist
@@ -74,6 +75,7 @@ Open the live demo. The Console lands on **Demo**: a 6-scene stepper on top, the
 - [ ] The tunnel URL is unchanged. If it changed, update the OIDC redirect URI in the World portal and `PUBLIC_URL` / `WORLD_OIDC_REDIRECT_URI` in `.env`.
 - [ ] `carol.legal.approvers.airlock.eth` is **live** before scene 04: ENS tab → Approvers → enroll `carol.legal.approvers.airlock.eth` with World ID for Agents (or `npm run ens -- enroll carol.legal.approvers.airlock.eth 0x01`). Scene 04 revokes her, so re-enroll between takes.
 - [ ] Allow popups for the demo URL (World ID for Agents opens in a popup).
+- [ ] Scene 05 needs **alice and bob** live (the ENS tab's lookup). The "same human" moment needs **World App QR (IDKit)** plus the simulator (simulator.worldcoin.org) and the IDKit staging window.
 - [ ] For IDKit only: the staging window is open. It expires 24h after opening; reopen it via the Portal MCP `set_world_id_staging_verification`.
 - [ ] Fresh ledger for recording: stop the gateway, `rm data/audit.jsonl`, start it, then *Anchor now* at the end.
 - [ ] After judging: rotate `AIRLOCK_ACCESS_TOKEN`, the World OIDC client secret, the RP signing key and the Portal team API key.

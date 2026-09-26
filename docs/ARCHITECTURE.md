@@ -214,6 +214,8 @@ airlock/
 | RiskScorer：規則 ＋ 本地攻擊測試（P2） | ✅ 本地模型嘗試還原代號，猜中即為高風險 |
 | PolicyResolver / RoleRegistry（ENS） | ✅ `airlock.eth` 已上 Sepolia；依 record key 分權（EAC）：security 帳號改政策，gateway 只能寫 approver 和 auditRoot |
 | Approver | ✅ World ID for Agents（sandbox OIDC）＋ IDKit v4，都已用真實環境實測 |
+| 高風險雙人核可 | ✅ ENS `airlock.highRiskQuorum = 2`；World ID nullifier 保證是兩個不同的真人（同一人換名稱會被拒） |
+| 政策共用（ENSv2 aliasing）＋新 agent 預設政策（wildcard） | ✅ `linkToNode` → `legal.policies.airlock.eth`；沒註冊的 agent 走 org default（internal） |
 | 核可範圍（P2） | ✅ 每次沿用都重新檢查核可者的 ENS 角色，撤銷即失效 |
 | AuditSink：hash chain ＋ Merkle ＋ 錨定 | ✅ 已錨定到 `audit.airlock.eth`，Console 的 ENS 分頁可以比對鏈上和本地的 root |
 | Console | ✅ 單一 HTML（由 gateway 提供），未改用 Next.js |
