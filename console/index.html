@@ -454,7 +454,7 @@
   <div class="pf-main" style="max-width:760px">
     <p class="eyebrow"><a href="/console">Your gateways</a> / New</p>
     <h2 style="font:500 26px var(--display); margin:0 0 6px">Create a gateway</h2>
-    <p class="muted" style="margin:0 0 20px">About a minute. You can change everything later in Settings.</p>
+    <p class="muted" style="margin:0 0 20px">About two minutes. You can change everything later in Manage.</p>
     <form class="form" id="newForm" autocomplete="off">
       <fieldset class="fs"><legend>Name</legend>
         <div class="grid2">
@@ -1667,8 +1667,8 @@ async function provisionProgress(slug, box, done) {
     const steps = g.steps ?? [], doneSteps = g.ensState?.done ?? {};
     const now = steps.find((x) => !doneSteps[x]);
     box.innerHTML = `<div class="panel"><h3>${g.ens.status === "live" ? "✓ " : ""}${esc(g.ens.name)}</h3>
-      <p class="muted" style="margin:0">${g.ens.status === "live" ? "Your gateway is live on ENS." : g.ens.status === "failed" ? "Setting up ENS stopped. Every step is safe to retry." : "Registering your name on Sepolia and writing your policy. About a minute; you can already open the gateway."}</p>
-      <ol class="steps">${steps.map((x) => `<li class="${doneSteps[x] ? "done" : g.ens.status === "provisioning" && x === now ? "now" : ""}"><span></span><span>${esc(x)}</span>${doneSteps[x] && doneSteps[x] !== "existing" ? `<a class="mono" style="font-size:11px" target="_blank" href="https://sepolia.etherscan.io/tx/${esc(doneSteps[x])}">tx ↗</a>` : "<span></span>"}</li>`).join("")}</ol>
+      <p class="muted" style="margin:0">${g.ens.status === "live" ? "Your gateway is live on ENS." : g.ens.status === "failed" ? "Setting up ENS stopped. Every step is safe to retry." : "Registering your name on Sepolia and writing your policy. About two minutes; you can already open the gateway."}</p>
+      <ol class="steps">${steps.map((x) => `<li class="${doneSteps[x] ? "done" : g.ens.status === "provisioning" && x === now ? "now" : ""}"><span>${esc(x)}</span>${doneSteps[x] && doneSteps[x] !== "existing" ? `<a class="mono" style="font-size:11px" target="_blank" href="https://sepolia.etherscan.io/tx/${esc(doneSteps[x])}">tx ↗</a>` : "<span></span>"}</li>`).join("")}</ol>
       ${g.ens.error ? `<div class="err">${esc(g.ens.error)}</div>` : ""}
       <div class="inline" style="margin-top:14px">${g.ens.status === "failed" ? `<button class="btn dark" id="provRetry">Retry</button>` : ""}<a class="btn ${g.ens.status === "live" ? "dark" : ""}" href="/console/${esc(slug)}" style="text-decoration:none">Open gateway →</a></div></div>`;
     $("#provRetry") && ($("#provRetry").onclick = async () => { await post(`/api/gateways/${slug}/provision`); provisionProgress(slug, box, done); });
