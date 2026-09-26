@@ -328,6 +328,11 @@ const app = buildPlatform({
   publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
   oidcTenant: oidc && ((state) => oidc.peek(state)?.tenant),
   policyChanged: () => ctx?.policies.invalidate(),
+  limits: {
+    chatPerHour: Number(env.CHAT_PER_HOUR ?? 120),
+    demoChatPerHour: Number(env.DEMO_CHAT_PER_HOUR ?? 20),
+    newGatewaysPerHour: Number(env.NEW_GATEWAYS_PER_HOUR ?? 10),
+  },
 });
 const consoleHtml = readFileSync(path("console/index.html"), "utf8");
 

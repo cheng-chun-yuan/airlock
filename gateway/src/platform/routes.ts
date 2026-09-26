@@ -31,6 +31,24 @@ export interface PlatformDeps {
   oidcTenant?: (state: string) => string | undefined;
   /** Drop cached ENS policy reads after the platform changed a policy, so the next request obeys it. */
   policyChanged?: () => void;
+  /**
+   * Abuse limits for an open sign-up. Chat requests per member per hour (the demo spends the platform's own
+   * frontier key, so it gets less), and new gateways per hour across everyone (each costs eight Sepolia txs).
+   */
+  limits?: { chatPerHour?: number; demoChatPerHour?: number; newGatewaysPerHour?: number };
+}
+
+/** Sliding one-hour window per key. In memory: a restart forgives everyone, which is fine for abuse limits. */
+function hourly() {
+  const hits = new Map<string, number[]>();
+  return (key: string, max: number) => {
+    const now = Date.now();
+    const recent = (hits.get(key) ?? []).filter((t) => now - t < 3600_000);
+    if (recent.length >= max) return Math.ceil((recent[0] + 3600_000 - now) / 60_000);
+    recent.push(now);
+    hits.set(key, recent);
+    return 0;
+  };
 }
 
 const SESSION = "airlock_session";
@@ -70,14 +88,19 @@ export function buildPlatform(d: PlatformDeps) {
   const app = new Hono();
   const { store } = d;
   const provisioning = new Set<string>();
+  const limit = hourly();
+  const L = { chatPerHour: 120, demoChatPerHour: 20, newGatewaysPerHour: 10, ...d.limits };
 
   const me = (c: Context) => d.auth.read(getCookie(c, SESSION));
-  const host = (c: Context) => c.req.header("x-forwarded-host") ?? c.req.header("host") ?? new URL(c.req.url).host;
-  const secure = (c: Context) => c.req.header("x-forwarded-proto") === "https" || new URL(c.req.url).protocol === "https:";
+  // The SIWE domain is this server's configured public origin, never a request header: a client can send any
+  // Host / X-Forwarded-Host, and a message signed on another site must not log anyone in here.
+  const origin = new URL(d.publicUrl);
+  const secure = (c: Context) => origin.protocol === "https:" || c.req.header("x-forwarded-proto") === "https";
 
   // ---------- static ----------
   app.get("/health", (c) => c.json({ ok: true }));
   app.get("/", (c) => c.redirect("/console"));
+  app.get("/favicon.ico", (c) => c.body(null, 204));
   for (const p of ["/console", "/console/:slug", "/join/:code"]) app.get(p, (c) => c.html(d.consoleHtml()));
   // IDKit browser bundle + its WASM, served from node_modules (the CDN build fails WASM init; see docs/SETUP.md).
   const idkitDir = dirname(createRequire(import.meta.url).resolve("@worldcoin/idkit-core/hashing"));
@@ -92,14 +115,13 @@ export function buildPlatform(d: PlatformDeps) {
   app.post("/api/auth/nonce", async (c) => {
     const { address, chainId } = (await c.req.json().catch(() => ({}))) as { address?: string; chainId?: number };
     if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) return json(c, 400, "address required");
-    const origin = `${secure(c) ? "https" : "http"}://${host(c)}`;
-    return c.json({ message: d.auth.message({ address, chainId: Number(chainId) || 1, domain: host(c), uri: origin }) });
+    return c.json({ message: d.auth.message({ address, chainId: Number(chainId) || 1, domain: origin.host, uri: origin.origin }) });
   });
   app.post("/api/auth/verify", async (c) => {
     const { message, signature } = (await c.req.json().catch(() => ({}))) as { message?: string; signature?: Hex };
     if (!message || !signature) return json(c, 400, "message and signature required");
     try {
-      const address = await d.auth.verify(message, signature, host(c));
+      const address = await d.auth.verify(message, signature, origin.host);
       const s = d.auth.session(address);
       setCookie(c, SESSION, s.value, { httpOnly: true, sameSite: "Lax", secure: secure(c), path: "/", maxAge: s.maxAge });
       return c.json({ address });
@@ -125,7 +147,7 @@ export function buildPlatform(d: PlatformDeps) {
   app.get("/api/me", (c) => {
     const address = me(c);
     const platform = { root: d.root, canCreate: !!d.provisioner, maxGateways: d.maxGatewaysPerUser, sharedLocal: d.sharedLocal ?? null, allowPrivateUpstreams: d.allowPrivateUpstreams };
-    if (!address) return c.json({ address: null, platform }, 401);
+    if (!address) return c.json({ address: null, platform });
     const gateways = store.forUser(address).map((g) => view(g, store.memberOf(g, address)!));
     return c.json({ address, gateways, platform });
   });
@@ -188,7 +210,9 @@ export function buildPlatform(d: PlatformDeps) {
   function startProvision(g: Gateway) {
     if (!d.provisioner || provisioning.has(g.id)) return;
     provisioning.add(g.id);
-    g.ens.status = "provisioning";
+    // A live gateway only has the hand-over steps left: it keeps serving while they run.
+    const wasLive = g.ens.status === "live";
+    if (!wasLive) g.ens.status = "provisioning";
     g.ens.error = undefined;
     store.save();
     const run = () =>
@@ -221,22 +245,27 @@ export function buildPlatform(d: PlatformDeps) {
         console.log(`[platform] ${g.slug}.${d.root} is live on ENS`);
       })
       .catch((e) => {
-        g.ens.status = "failed";
-        g.ens.error = ((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0].slice(0, 200);
-        console.warn(`[platform] provisioning ${g.slug} failed: ${g.ens.error}`);
+        const error = ((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0].slice(0, 200);
+        if (!wasLive) Object.assign(g.ens, { status: "failed", error });
+        console.warn(`[platform] provisioning ${g.slug} failed: ${error}`);
       })
       .finally(() => {
         provisioning.delete(g.id);
         store.save();
       });
   }
-  // Resume anything a restart interrupted.
-  for (const g of store.all()) if (g.kind === "user" && g.ens.status === "provisioning") startProvision(g);
+  const handedOver = (g: Gateway) => !!g.ens.state.done["hand over registry"];
+  /** Policy keys belong to the owner's wallet from this step on (the registry hand-over follows right after). */
+  const ownerSignsPolicy = (g: Gateway) => !!g.ens.state.done["hand over policy"];
+  // Resume anything a restart interrupted, and hand over gateways built before the platform gave up its roles.
+  for (const g of store.all()) if (g.kind === "user" && (g.ens.status === "provisioning" || (g.ens.status === "live" && !handedOver(g)))) startProvision(g);
 
   app.post("/api/gateways", async (c) => {
     const address = me(c);
     if (!address) return json(c, 401, "sign in first");
     if (!d.provisioner) return json(c, 501, "this server has no ENS writer configured, so it can't create gateways");
+    const created = store.all().filter((g) => g.kind === "user" && Date.now() - g.createdAt < 3600_000).length;
+    if (created >= L.newGatewaysPerHour) return json(c, 429, "many gateways were created in the last hour; try again a bit later");
     const owned = store.all().filter((g) => g.kind === "user" && g.owner === address).length;
     if (owned >= d.maxGatewaysPerUser) return json(c, 403, `you already own ${owned} gateway${owned === 1 ? "" : "s"} (limit ${d.maxGatewaysPerUser})`);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
@@ -290,7 +319,7 @@ export function buildPlatform(d: PlatformDeps) {
     const { g, m } = a;
     return c.json({
       ...view(g, m),
-      ...(g.kind === "user" && m.role === "admin" && { settings: { ...secretsView(g), policy: g.policy }, ensState: g.ens.state, steps: PROVISION_STEPS }),
+      ...(g.kind === "user" && m.role === "admin" && { settings: { ...secretsView(g), policy: g.policy }, ensState: g.ens.state, steps: PROVISION_STEPS, policySigner: ownerSignsPolicy(g) ? "owner" : "platform" }),
       ...(g.kind === "user" && m.role !== "admin" && { settings: { policy: g.policy, frontier: { models: g.frontier.models, defaultModel: g.frontier.defaultModel } } }),
     });
   });
@@ -311,13 +340,33 @@ export function buildPlatform(d: PlatformDeps) {
     const next = { ...g, local: models.local!, frontier: models.frontier!, policy };
     const records = policyRecords(next, d.root);
     let tx: string | undefined;
-    // Policy lives on ENS: write it first, and only keep the new settings if the chain took them.
-    if (JSON.stringify(records) !== before && g.ens.status === "live" && d.provisioner && g.ens.state.resolver) {
+    const resolver = g.ens.state.resolver;
+    const policyName = gatewayNames(g.slug, d.root).policy;
+    const ensError = (e: unknown) => ((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0];
+    // Policy lives on ENS: it changes on-chain first, and the new settings are kept only if the chain took them.
+    // Once handed over, only a wallet with policy rights on the resolver (the owner's) can write it: the Console
+    // gets the transaction back to sign, then sends its hash, and we check it wrote exactly this policy.
+    if (JSON.stringify(records) !== before && d.provisioner && resolver && ownerSignsPolicy(g)) {
+      const signed = typeof body.policyTx === "string" && /^0x[0-9a-fA-F]{64}$/.test(body.policyTx) ? (body.policyTx as Hex) : undefined;
       try {
-        tx = await d.provisioner.writePolicy(g.ens.state.resolver, gatewayNames(g.slug, d.root).policy, records);
+        if (!signed) {
+          if (!(await d.provisioner.canWritePolicy(resolver, a.address as Address, records)))
+            return json(c, 403, `Only the owner's wallet (${g.owner}) can change this gateway's policy: it's written on-chain, and the platform holds no rights to it.`);
+          return c.json({ sign: d.provisioner.policyTx(resolver, policyName, records) }, 202);
+        }
+        const wrong = await d.provisioner.checkPolicyTx(resolver, policyName, records, signed);
+        if (wrong) return json(c, 409, `Nothing changed: ${wrong}.`);
+        tx = signed;
         d.policyChanged?.();
       } catch (e) {
-        return json(c, 502, `ENS write failed, nothing changed: ${((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0]}`);
+        return json(c, 502, `ENS check failed, nothing changed: ${ensError(e)}`);
+      }
+    } else if (JSON.stringify(records) !== before && g.ens.status === "live" && d.provisioner && resolver) {
+      try {
+        tx = await d.provisioner.writePolicy(resolver, policyName, records);
+        d.policyChanged?.();
+      } catch (e) {
+        return json(c, 502, `ENS write failed, nothing changed: ${ensError(e)}`);
       }
     }
     Object.assign(g, { name, local: next.local, frontier: next.frontier, policy });
@@ -507,6 +556,7 @@ export function buildPlatform(d: PlatformDeps) {
   app.post("/api/gateways/:slug/keys", async (c) => {
     const a = access(c, c.req.param("slug"));
     if (a instanceof Response) return a;
+    if (a.g.kind === "demo") return json(c, 403, "the shared demo is for the Playground; create your own gateway to connect agents");
     const { name } = (await c.req.json().catch(() => ({}))) as { name?: string };
     const n = String(name ?? "").trim().slice(0, 40) || "agent";
     if (a.g.keys.filter((k) => k.member === a.m.address).length >= 20) return json(c, 403, "20 keys per member; delete one first");
@@ -532,6 +582,10 @@ export function buildPlatform(d: PlatformDeps) {
    * only ever run under its own gateway's ENS policy.
    */
   async function forward(c: Context, g: Gateway, m: Member, path: string, o: { body?: unknown; query?: Record<string, string> } = {}) {
+    if (path === "/v1/chat/completions") {
+      const wait = limit(`${g.id}|${m.address}`, g.kind === "demo" ? L.demoChatPerHour : L.chatPerHour);
+      if (wait) return c.json({ error: { message: `rate limit: too many requests this hour; try again in ${wait} min`, type: "rate_limit_error" } }, 429);
+    }
     const t = d.tenants.get(g);
     const { body } = o;
     const url = new URL(c.req.url);

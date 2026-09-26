@@ -23,6 +23,7 @@
     --canvas:#0f0f0f; --haze:#171717; --hairline:#2a2a2a; --faint:#1f1f1f; --ink:#ececec; --umber:#9a9a9a; --sand:#5f5f5f;
     --ember:#ff6a55; --ember-tint:#2b1411; --ember-line:#5c2a23; --go:#58c48a; --go-tint:#10231a; --hold:#e2b24a; --hold-tint:#262010; } }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   html, body { margin:0; }
   body { font:15px/1.55 var(--body); background:var(--canvas); color:var(--ink); -webkit-font-smoothing:antialiased; }
   button { font:inherit; color:inherit; }
@@ -203,9 +204,10 @@
   @keyframes blink { 50% { opacity:0; } }
 
   /* ---------- toast ---------- */
-  .ens-grid { display:grid; grid-template-columns:1.3fr 1fr; gap:16px; }
-  @media (max-width: 900px) { .ens-grid { grid-template-columns:1fr; } }
-  .panel { border:1px solid var(--hairline); border-radius:14px; padding:18px; }
+  .ens-grid { display:grid; grid-template-columns:minmax(0, 1.3fr) minmax(0, 1fr); gap:16px; }
+  @media (max-width: 900px) { .ens-grid { grid-template-columns:minmax(0, 1fr); } }
+  /* Wide tables scroll inside their panel instead of widening the page. */
+  .panel { border:1px solid var(--hairline); border-radius:14px; padding:18px; min-width:0; overflow-x:auto; }
   .panel h3 { margin:0 0 10px; font:500 17px var(--display); }
   .rec { display:grid; grid-template-columns:170px 1fr auto; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--faint); font-size:13.5px; }
   .rec:last-child { border-bottom:0; }
@@ -295,9 +297,68 @@
   .toast b { font:600 10.5px var(--mono); letter-spacing:.1em; display:block; color:var(--hold-tint); }
   @keyframes slide-up { from { transform:translateY(12px); opacity:0; } }
 
+  /* ---------- platform: sign-in, home, create, join ---------- */
+  .screen[hidden] { display:none !important; }
+  .pf-top { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 24px; border-bottom:1px solid var(--hairline); }
+  .pf-main { max-width:1080px; margin:0 auto; padding:28px 24px 64px; }
+  .pf-narrow { max-width:560px; margin:9vh auto 0; padding:0 16px; }
+  .pf-hero h1 { font:500 34px/1.15 var(--display); letter-spacing:-.02em; margin:.2em 0 12px; }
+  .pf-hero p { font-size:16px; color:var(--umber); margin:0 0 22px; }
+  .pf-points { list-style:none; padding:0; margin:0 0 26px; display:grid; gap:10px; }
+  .pf-points li { display:grid; grid-template-columns:22px 1fr; gap:8px; font-size:14.5px; }
+  .pf-points li::before { content:""; width:10px; height:10px; margin-top:6px; border:2px solid var(--ink); border-radius:3px; }
+  .btn.big { padding:12px 22px; font-size:15px; font-weight:600; }
+  .btn[disabled] { opacity:.5; cursor:default; }
+  .err { color:var(--ember); font-size:13.5px; margin-top:10px; white-space:pre-wrap; }
+  .ok-note { color:var(--go); font-size:13.5px; margin-top:10px; }
+  .invite-card { border:1px solid var(--hairline); border-left:3px solid var(--ember); border-radius:12px; padding:14px 16px; margin-bottom:22px; }
+  .invite-card b { font-weight:600; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; }
+  .gcard { display:flex; flex-direction:column; gap:6px; border:1px solid var(--hairline); border-radius:14px; padding:16px 18px; text-decoration:none; color:var(--ink); min-height:128px; transition:border-color .15s, transform .15s; }
+  .gcard:hover { border-color:var(--ink); transform:translateY(-1px); color:var(--ink); }
+  .gcard h3 { margin:0; font:500 18px var(--display); }
+  .gcard .ens { font:12px var(--mono); color:var(--umber); word-break:break-all; }
+  .gcard .foot { margin-top:auto; display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .gcard.new { border-style:dashed; justify-content:center; align-items:center; text-align:center; color:var(--umber); }
+  .gcard.new b { font:500 17px var(--display); color:var(--ink); }
+  .pill { font:600 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; padding:2px 8px; border-radius:4px; background:var(--haze); color:var(--umber); }
+  .pill.admin { background:var(--ink); color:var(--canvas); } .pill.approver { background:var(--hold-tint); color:var(--hold); }
+  .pill.live { background:var(--go-tint); color:var(--go); } .pill.provisioning { background:var(--hold-tint); color:var(--hold); } .pill.failed { background:var(--ember-tint); color:var(--ember); }
+  .form { display:grid; gap:18px; }
+  .fs { border:1px solid var(--hairline); border-radius:14px; padding:18px; margin:0; }
+  .fs legend { font:500 17px var(--display); padding:0 6px; margin-left:-6px; }
+  .fs .lede { color:var(--umber); font-size:13.5px; margin:0 0 6px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns:1fr; } }
+  .choice { display:grid; gap:8px; margin-top:10px; }
+  .choice label { display:grid; grid-template-columns:20px 1fr; gap:8px; border:1px solid var(--hairline); border-radius:10px; padding:10px 12px; cursor:pointer; font-size:14px; }
+  .choice label:has(input:checked) { border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink); }
+  .choice small { display:block; color:var(--umber); font-size:12.5px; }
+  .slugrow { display:flex; align-items:center; border:1px solid var(--hairline); border-radius:10px; overflow:hidden; }
+  .slugrow .field { border:0; border-radius:0; }
+  .slugrow span { font:13px var(--mono); color:var(--umber); padding:0 12px; white-space:nowrap; }
+  .check { font:12px var(--mono); margin-top:4px; min-height:16px; } .check.ok { color:var(--go); } .check.bad { color:var(--ember); }
+  .steps { list-style:none; padding:0; margin:12px 0 0; display:grid; gap:6px; font:13px var(--mono); }
+  .steps li { display:grid; grid-template-columns:20px 1fr auto; gap:8px; color:var(--sand); }
+  .steps li.done { color:var(--ink); } .steps li.done::before { content:"✓"; color:var(--go); } .steps li.now { color:var(--hold); } .steps li.now::before { content:"●"; animation:blink 1s steps(2) infinite; }
+  .steps li:not(.done):not(.now)::before { content:"○"; }
+  .banner { border:1px solid var(--hold); background:var(--hold-tint); border-radius:12px; padding:10px 14px; margin-bottom:16px; font-size:14px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+  .banner.bad { border-color:var(--ember-line); background:var(--ember-tint); }
+  .gw-switch { font:500 12px var(--mono); border:1px solid var(--hairline); border-radius:99px; padding:4px 8px; background:var(--canvas); color:var(--ink); max-width:220px; }
+  .acct { position:relative; }
+  .acct-menu { position:absolute; right:0; top:calc(100% + 6px); background:var(--canvas); border:1px solid var(--hairline); border-radius:12px; padding:8px; min-width:220px; box-shadow:0 8px 28px rgba(0,0,0,.12); z-index:30; }
+  .acct-menu[hidden] { display:none; }
+  .acct-menu .who { font:12px var(--mono); color:var(--umber); padding:6px 8px 8px; border-bottom:1px solid var(--faint); margin-bottom:6px; word-break:break-all; }
+  .acct-menu button, .acct-menu a { display:block; width:100%; text-align:left; border:0; background:none; padding:7px 8px; border-radius:8px; cursor:pointer; font-size:13.5px; text-decoration:none; color:var(--ink); }
+  .acct-menu button:hover, .acct-menu a:hover { background:var(--haze); }
+  .secret { font:13px var(--mono); background:var(--go-tint); border:1px solid var(--go); border-radius:10px; padding:10px 12px; word-break:break-all; margin-top:10px; }
+  .inline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .inline .field { width:auto; flex:1; min-width:140px; }
+  select.field { font-family:var(--body); font-size:14px; }
+
   @media (max-width: 900px) {
     header { flex-wrap:wrap; padding:10px 16px; gap:10px 12px; } .brand { letter-spacing:.14em; }
-    .live { order:2; margin-left:auto; } #liveTxt { display:none; } .tabs { order:3; flex-basis:100%; justify-content:space-between; } .tabs button { flex:1; justify-content:center; }
+    .live { order:2; margin-left:auto; } #liveTxt { display:none; } .tabs { order:3; flex-basis:100%; overflow-x:auto; scrollbar-width:none; } .tabs button { flex:none; justify-content:center; white-space:nowrap; }
     .ticker { order:4; flex-basis:100%; justify-content:flex-start; } .ticker:empty { display:none; } .modepill { display:none; }
     main { padding:16px; } .queue, .try { grid-template-columns:1fr; } .list { position:static; max-height:none; }
     .panes { grid-template-columns:1fr; } .facts { grid-template-columns:1fr; } .decide { grid-template-columns:1fr; }
@@ -308,34 +369,85 @@
 </style>
 </head>
 <body>
+<!-- Platform screens: sign-in, your gateways, create one, join by invite. The gateway Console follows. -->
+<div class="screen" id="screen-auth" hidden>
+  <div class="pf-narrow pf-hero">
+    <div class="brand"><span class="mark"></span>AIRLOCK</div>
+    <div id="authInvite"></div>
+    <h1>Your agents, your models. Confidential data leaves only with a human's OK.</h1>
+    <p>Airlock is an OpenAI-compatible gateway you set up in a minute. Connect your own local and frontier models, invite your team, and give every agent its own key.</p>
+    <ul class="pf-points">
+      <li>Local model first: names and numbers are de-identified before anything leaves.</li>
+      <li>Confidential requests wait for an approver you invited, verified as a real human with World ID.</li>
+      <li>Your policy and your approvers live on ENS under a name your wallet owns.</li>
+    </ul>
+    <button class="btn dark big" id="signIn">Sign in with your wallet</button>
+    <div class="muted" style="font-size:13px; margin-top:10px">A signature, not a transaction: it costs nothing.</div>
+    <div class="err" id="authErr"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-home" hidden>
+  <div class="pf-top"><a class="brand" href="/console" style="text-decoration:none"><span class="mark"></span>AIRLOCK</a><div class="acct" data-acct></div></div>
+  <div class="pf-main">
+    <p class="eyebrow">Your gateways</p>
+    <h2 style="font:500 26px var(--display); margin:0 0 6px">Where your agents send their requests</h2>
+    <p class="muted" style="margin:0 0 20px">Each gateway has its own models, members, API keys and ENS name. Open one, or create a new one.</p>
+    <div class="cards" id="homeCards"></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-new" hidden>
+  <div class="pf-top"><a class="brand" href="/console" style="text-decoration:none"><span class="mark"></span>AIRLOCK</a><div class="acct" data-acct></div></div>
+  <div class="pf-main" style="max-width:760px">
+    <p class="eyebrow"><a href="/console">Your gateways</a> / New</p>
+    <h2 style="font:500 26px var(--display); margin:0 0 6px">Create a gateway</h2>
+    <p class="muted" style="margin:0 0 20px">About a minute. You can change everything later in Settings.</p>
+    <form class="form" id="newForm" autocomplete="off">
+      <fieldset class="fs"><legend>Name</legend>
+        <div class="grid2">
+          <label class="f"><span>Gateway name</span><input class="field" name="name" placeholder="Acme Legal" required maxlength="60" /></label>
+          <label class="f"><span>Your name in it</span><input class="field" name="label" placeholder="alice" required pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?" /><small class="muted">Lowercase. Becomes your approver name.</small></label>
+        </div>
+        <label class="f"><span>ENS name</span><div class="slugrow"><input class="field" name="slug" placeholder="acme-legal" required /><span id="slugRoot">.airlock.eth</span></div><div class="check" id="slugCheck"></div><small class="muted">Created on Sepolia and owned by your wallet. Your policy, approvers and audit anchor live under it.</small></label>
+      </fieldset>
+      <div id="newModels"></div>
+      <div id="newPolicy"></div>
+      <div class="inline"><button class="btn" type="button" id="newTest">Test connections</button><button class="btn dark big" id="newCreate">Create gateway</button></div>
+      <div id="newTestOut"></div><div class="err" id="newErr"></div>
+    </form>
+    <div id="newProgress" hidden></div>
+  </div>
+</div>
+
+<div class="screen" id="screen-join" hidden>
+  <div class="pf-top"><a class="brand" href="/console" style="text-decoration:none"><span class="mark"></span>AIRLOCK</a><div class="acct" data-acct></div></div>
+  <div class="pf-narrow" id="joinBody"></div>
+</div>
+
+<div class="screen" id="screen-gw" hidden>
 <header>
-  <div class="brand"><span class="mark"></span>AIRLOCK<span class="org" id="orgName"></span></div>
+  <a class="brand" href="/console" style="text-decoration:none" title="All your gateways"><span class="mark"></span>AIRLOCK</a>
+  <select class="gw-switch" id="gwSwitch" title="Switch gateway"></select>
   <nav class="tabs">
     <button data-tab="overview" class="on">Overview</button>
     <button data-tab="queue">Approvals <span class="count" id="nPending"></span></button>
     <button data-tab="playground">Playground</button>
-    <button data-tab="ens">Agents</button>
-    <button data-tab="approvers">Approvers</button>
+    <button data-tab="ens">Policy</button>
+    <button data-tab="approvers">Members</button>
     <button data-tab="ledger">Audit</button>
     <button data-tab="connect">Connect</button>
+    <button data-tab="settings" id="tabSettings" hidden>Settings</button>
   </nav>
   <div class="ticker" id="ticker" title="Recent decisions: green = sent, red = sealed, striped = blocked"></div>
   <div class="live" id="live"><span class="led"></span><span id="liveTxt">offline</span></div>
   <button class="bell" id="bell" title="Browser notification when a request needs approval">🔔 Notify me</button>
-  <button class="profile" id="profileBtn" title="Your identity in Airlock">Set up profile</button>
+  <div class="acct" data-acct></div>
 </header>
 
-<dialog id="profileDlg">
-  <form method="dialog">
-    <p class="eyebrow">Your profile</p>
-    <h3 style="margin:.2em 0 12px">Who you are in Airlock</h3>
-    <label class="f"><span>Name or work email</span><input class="field" id="pfUser" placeholder="you@company.com" required /><small class="muted">Sent with your requests (x-airlock-user) and written to the audit log.</small></label>
-    <label class="f"><span>Your approver name (ENS)</span><input class="field" id="pfApprover" placeholder="you.legal.approvers.airlock.eth" /><small class="muted">Only if you approve requests. Enroll it under <b>Approvers</b> with World ID first.</small></label>
-    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn dark" id="pfSave" value="save">Save</button></div>
-  </form>
-</dialog>
 
 <main>
+  <div id="gwBanner"></div>
   <section id="tab-overview">
     <div class="ledger-head">
       <div><p class="eyebrow">Overview</p><h2 id="ovTitle">—</h2><p class="muted" id="ovSub" style="margin:4px 0 0"></p></div>
@@ -387,12 +499,12 @@
 
   <section id="tab-ens" hidden>
     <div class="ledger-head">
-      <div><p class="eyebrow">Agents & policy · ENSv2 · read live</p><h2 id="ensTitle">—</h2><div class="root" id="ensSub"></div></div>
+      <div><p class="eyebrow" id="ens-eyebrow">Agents & policy · ENSv2 · read live</p><h2 id="ensTitle">—</h2><div class="root" id="ensSub"></div></div>
       <div style="display:flex; gap:8px"><button class="btn" id="ensRefresh">Refresh</button></div>
     </div>
     <div class="ens-grid">
-      <div class="panel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.</p><div id="ensAgents"></div></div>
-      <div class="panel"><h3>Policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the agent's egress policy. Change one on-chain and the next request obeys it.</p><div id="ensPolicy"></div></div>
+      <div class="panel" id="ensAgentsPanel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.</p><div id="ensAgents"></div></div>
+      <div class="panel"><h3>Policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the egress policy. Change one on-chain (Settings, or any ENS app with the owner's wallet) and the next request obeys it.</p><div id="ensPolicy"></div></div>
       <div class="panel"><h3>Who may change what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (read from the live contract).</p><div id="ensAccess"></div></div>
       <div class="panel"><h3>Audit anchor</h3><div id="ensAudit"></div></div>
       <div class="panel"><h3>Name tree</h3><pre class="tree" id="ensTree"></pre></div>
@@ -400,6 +512,8 @@
   </section>
 
   <section id="tab-approvers" hidden>
+    <div id="teamBody"></div>
+    <div id="apDemo">
     <div class="ledger-head">
       <div><p class="eyebrow">Approvers</p><h2>Who can release confidential data</h2><div class="root" id="apRole"></div></div>
       <div style="display:flex; gap:8px"><button class="btn" id="apRefresh">Refresh</button></div>
@@ -415,21 +529,42 @@
         <div class="out" id="ensApprover" style="margin-top:10px"></div>
       </div>
     </div>
+    </div>
   </section>
 
   <section id="tab-connect" hidden>
-    <div class="ledger-head"><div><p class="eyebrow">Connect</p><h2>Point your agents at Airlock</h2><p class="muted" style="margin:4px 0 0">Airlock speaks the OpenAI API. Change the base URL, keep your client.</p></div></div>
+    <div class="ledger-head"><div><p class="eyebrow">Connect</p><h2>Point your agents at Airlock</h2><p class="muted" style="margin:4px 0 0">Airlock speaks the OpenAI API. Change the base URL, use your own key, keep your client.</p></div></div>
+    <div class="panel" style="margin-bottom:16px"><h3>Your API keys</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">One key per agent or app. Requests made with a key are sent as you, and you can withdraw them. Keys stop working if you leave the gateway.</p>
+      <div class="inline"><input class="field" id="keyName" placeholder="Name, e.g. librechat" maxlength="40" /><button class="btn dark" id="keyCreate">Create key</button></div>
+      <div id="keyNew"></div><div id="keyList" style="margin-top:12px"></div></div>
     <div class="ens-grid" id="connectBody"></div>
   </section>
+
+  <section id="tab-settings" hidden>
+    <div class="ledger-head"><div><p class="eyebrow">Settings</p><h2 id="setTitle">—</h2><div class="root" id="setSub"></div></div></div>
+    <form class="form" id="setForm" autocomplete="off">
+      <fieldset class="fs"><legend>Name</legend><label class="f"><span>Gateway name</span><input class="field" name="name" required maxlength="60" /></label></fieldset>
+      <div id="setModels"></div>
+      <div id="setPolicy"></div>
+      <p class="muted" id="setPolicyNote" style="font-size:13px; margin:-4px 0 12px"></p>
+      <div class="inline"><button class="btn" type="button" id="setTest">Test connections</button><button class="btn dark big" id="setSave">Save</button></div>
+      <div id="setTestOut"></div><div class="err" id="setErr"></div><div class="ok-note" id="setOk"></div>
+    </form>
+  </section>
 </main>
+</div>
 <div class="toasts" id="toasts"></div>
 
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
-const j = (url, opts) => fetch(url, opts).then((r) => r.json());
-const post = (url, body) => j(url, { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body ?? {}) });
+/** The gateway open in this page: its API lives under /g/<slug>. Platform routes (/api, /vendor) are global. */
+let GW = null;
+const api = (url) => url.startsWith("/api/") || url.startsWith("/vendor/") || !GW ? url : `/g/${GW}${url}`;
+const j = (url, opts) => fetch(api(url), opts).then((r) => r.json());
+const send = (method, url, body) => j(url, { method, headers:{ "content-type":"application/json" }, body:JSON.stringify(body ?? {}) });
+const post = (url, body) => send("POST", url, body);
 const short = (agent) => String(agent ?? "").replace(/\.agents\..*$/, "");
 const clock = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 const WORD = { pending:"held", approved:"cleared", denied:"sealed", expired:"expired", role_invalid:"role fail", proof_invalid:"proof fail" };
@@ -439,24 +574,24 @@ const hhmmss = (t) => new Date(t).toLocaleTimeString([], { hour:"2-digit", minut
 const labels = (text) => esc(text).replace(/^\[user\] /gm, "").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, "$1·$2");
 
 let cfg = {}, items = [], selected = null, current = null, lastStatus = {}, seen = new Set(), view = "split", who = null, via = null;
-/** The signed-in person, kept in this browser. Sent as x-airlock-user; the approver name pre-fills approvals. */
+/** Demo gateway only: the approver name you last played (anyone may act as any demo approver). */
 const profile = (() => { try { return JSON.parse(localStorage.getItem("airlock.profile") || "{}"); } catch { return {}; } })();
-function saveProfile() { try { localStorage.setItem("airlock.profile", JSON.stringify(profile)); } catch {} paintProfile(); }
-function paintProfile() {
-  const b = $("#profileBtn"); b.classList.toggle("empty", !profile.user);
-  b.textContent = profile.user ? profile.user : "Set up profile";
-  $("#pgWho").textContent = profile.user || "an anonymous user (set up your profile)";
-}
-function openProfile() { $("#pfUser").value = profile.user ?? ""; $("#pfApprover").value = profile.approver ?? ""; $("#profileDlg").showModal(); }
-const approverFor = (role) => profile.approver && profile.approver.endsWith("." + role) ? profile.approver : "";
+function saveProfile() { try { localStorage.setItem("airlock.profile", JSON.stringify(profile)); } catch {} }
+const isDemo = () => cfg.kind === "demo";
+const canApprove = () => isDemo() || ["admin", "approver"].includes(cfg.me?.role);
+/** In your own gateways you approve as yourself: the name comes from your membership, not from a text box. */
+const approverFor = (role) => !isDemo() ? cfg.me?.approverName ?? "" : profile.approver && profile.approver.endsWith("." + role) ? profile.approver : "";
+const approverField = (id, r) => isDemo()
+  ? `<input class="field" id="${id}" value="${esc(approverFor(r.requiredRole))}" placeholder="you.${esc(r.requiredRole)}" />`
+  : `<input class="field" id="${id}" value="${esc(approverFor(r.requiredRole))}" readonly title="Your approver name in this gateway" />`;
 const viaToggle = () => cfg.worldIdAgents && cfg.worldIdMode !== "mock"
   ? `<div class="via"><span class="eyebrow" style="margin:0">Verify with</span><div class="seg">${[["oidc", "World ID for Agents"], ["idkit", "World App QR (IDKit)"]].map(([k, l]) => `<button data-via="${k}" class="${via === k ? "on" : ""}">${l}</button>`).join("")}</div></div>` : "";
 const wireVia = (root) => $$("[data-via]", root).forEach((b) => (b.onclick = () => { via = b.dataset.via; $$("[data-via]", root).forEach((x) => x.classList.toggle("on", x === b)); }));
 
 /* ---------- tabs ---------- */
-const TABS = ["overview", "queue", "playground", "ens", "approvers", "ledger", "connect"];
+const TABS = ["overview", "queue", "playground", "ens", "approvers", "ledger", "connect", "settings"];
 function tab(name) {
-  if (!TABS.includes(name)) name = "overview";
+  if (!TABS.includes(name) || (name === "settings" && cfg.me?.role !== "admin")) name = "overview";
   if (name !== "queue") history.replaceState(null, "", "#" + name); else if (selected) history.replaceState(null, "", "#" + selected);
   $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   TABS.forEach((t) => ($("#tab-" + t).hidden = t !== name));
@@ -465,8 +600,9 @@ function tab(name) {
   if (name === "ledger") loadLedger();
   if (name === "queue") { const cur = items.find((x) => x.id === selected); const waiting = items.find((x) => x.status === "pending"); if (waiting && (!cur || cur.status !== "pending")) show(waiting.id); }
   if (name === "ens") loadEns();
-  if (name === "approvers") loadApprovers();
-  if (name === "connect") renderConnect();
+  if (name === "approvers") isDemo() ? loadApprovers() : loadTeam();
+  if (name === "connect") { renderConnect(); loadKeys(); }
+  if (name === "settings") loadSettings();
 }
 $$(".tabs button").forEach((b) => (b.onclick = () => tab(b.dataset.tab)));
 
@@ -576,11 +712,12 @@ async function show(id) {
 }
 
 function decideHTML(r) {
+  if (!canApprove()) return `<div class="banner" style="margin-top:16px">Only approvers decide on requests. ${r.requesterId === cfg.me?.address ? `You asked for this one: <button class="btn" id="withdrawMine">Withdraw it</button>` : ""}</div>`;
   const people = cfg.mockApprovers ?? [];
   if (cfg.worldIdMode === "mock" && !who) who = people[0];
   const whoHTML = cfg.worldIdMode === "mock"
     ? `<label class="eyebrow" style="margin:0">Approving as <span class="muted">(mock World ID)</span></label><div class="opts">${people.map((p, i) => `<button data-i="${i}" class="${who && who.name === p.name ? "on" : ""}">${esc(p.name.split(".")[0])}<span class="muted">.${esc(p.name.split(".").slice(1).join("."))}</span></button>`).join("")}</div>`
-    : `<label class="eyebrow" style="margin:0">Approver (ENS name)</label><input id="approverName" value="${esc(approverFor(r.requiredRole))}" placeholder="you.${esc(r.requiredRole)}" />${viaToggle()}`;
+    : `<label class="eyebrow" style="margin:0">Approving as (ENS)</label>${approverField("approverName", r)}${viaToggle()}`;
   return `${quorumHTML(r)}<div class="decide"><div class="who">${whoHTML}<button class="linkish" id="sealNoteToggle" style="margin-top:8px">+ Add a note for the requester</button><input class="field" id="sealNote" placeholder="Note to the requester (sent with Seal)" style="margin-top:8px; max-width:420px" hidden /></div>
     <div class="actions"><button class="seal" id="seal" title="Deny: nothing is sent; the local model answers instead">Seal (deny)</button><button class="hold" id="hold" title="Press and hold ~1s, then verify with World ID"><i class="fill"></i><span>Hold, then verify with World ID</span></button></div></div>
     <div id="qr"></div><div class="out" id="out"></div>`;
@@ -600,6 +737,8 @@ function wireDetail(r) {
     el.onmouseleave = () => hot(`.chip[data-type="${el.dataset.type}"], .real[data-type="${el.dataset.type}"]`, false);
   });
   if (r.status !== "pending") return;
+  $("#withdrawMine") && ($("#withdrawMine").onclick = () => post(`/approvals/${r.id}/withdraw`));
+  if (!canApprove()) return;
   $$(".who .opts button").forEach((b) => (b.onclick = () => { who = cfg.mockApprovers[+b.dataset.i]; $$(".who .opts button").forEach((x) => x.classList.toggle("on", x === b)); }));
   $("#sealNoteToggle").onclick = () => { $("#sealNote").hidden = false; $("#sealNoteToggle").hidden = true; $("#sealNote").focus(); };
   $("#seal").onclick = async () => { sealFlash(); await post(`/approvals/${r.id}/deny`, { reason:$("#sealNote").value.trim() || "sealed by reviewer" }); };
@@ -627,8 +766,9 @@ let worldidPopup = null;
 /** One approve path for Queue and Demo. World ID for Agents opens in a popup so the agent's stream keeps running. */
 async function approveVia(r, name, ui) {
   const out = ui.out, say = (t) => out && (out.textContent = t);
+  if (isDemo() && name) { profile.approver = name; saveProfile(); }
   if (cfg.worldIdAgents && cfg.worldIdMode !== "mock" && via === "oidc") {
-    const url = `/approvals/${r.id}/oidc?approverName=${encodeURIComponent(name)}`;
+    const url = api(`/approvals/${r.id}/oidc?approverName=${encodeURIComponent(name)}`);
     const w = (worldidPopup = window.open(url, "worldid", "popup,width=520,height=720"));
     if (!w) { location.href = url; return; }
     say("World ID for Agents sign-in opened… (the gateway verifies the ID token, then checks the ENS role)");
@@ -790,6 +930,17 @@ async function loadEns() {
   $("#ensAccess").innerHTML = `<table class="matrix"><tr><th>record key</th>${s.access.map((x) => `<th>${esc(x.label === "gateway" ? "gateway (this server)" : x.label === "security" ? "security (policy owner)" : x.label)}<br><span class="muted" style="font-weight:400">${scan(x.address)}</span></th>`).join("")}</tr>` +
     keys.map((k) => `<tr><td>${esc(k)}</td>${s.access.map((x) => `<td class="${x.canWrite[k] ? "yes" : "no"}">${x.canWrite[k] ? "✓ write" : "✗"}</td>`).join("")}</tr>`).join("") + "</table>";
   const role = s.approverRole || `legal.approvers.${root}`;
+  if (!isDemo()) {
+    $("#ensTitle").innerHTML = ensApp(cfg.org);
+    $("#ensTree").innerHTML = [
+      `${ensApp(cfg.org)}   ← owned by the gateway's creator`,
+      `├─ ${ensApp(cfg.defaultAgent)}   ← this policy (every request reads it live)`,
+      `├─ ${ensApp(cfg.approverRole)}   ← approver role`,
+      `│   └─ <name>.${esc(cfg.approverRole)}   ← one subname per enrolled approver`,
+      `└─ ${ensApp(a.name)}   ← audit anchor`,
+    ].join("\n");
+    return;
+  }
   $("#ensTree").innerHTML = [
     `${ensApp(root)}`,
     `├─ ${ensApp("agents." + root)}   ← wildcard: unregistered agents get the org default`,
@@ -868,9 +1019,11 @@ async function demoSend(text, history) {
   renderAirlock(null, "checking");
   let answer = "";
   try {
-    const headers = { "content-type":"application/json", "x-airlock-session":demo.session, "x-airlock-agent":$("#demoAgent").value, "x-airlock-user":encodeURIComponent(profile.user ?? "") };
+    const headers = { "content-type":"application/json", "x-airlock-session":demo.session };
+    if (isDemo()) headers["x-airlock-agent"] = $("#demoAgent").value;
     if ($("#demoWhy").value.trim()) headers["x-airlock-justification"] = encodeURIComponent($("#demoWhy").value.trim());
-    const res = await fetch("/v1/chat/completions", { method:"POST", headers, body:JSON.stringify({ model:`airlock/${cfg.defaultClaudeModel}`, stream:true, messages }) });
+    const res = await fetch(api("/v1/chat/completions"), { method:"POST", headers, body:JSON.stringify({ model:`airlock/${cfg.defaultClaudeModel}`, stream:true, messages }) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader(); let buf = "";
     for (;;) {
       const { value, done } = await reader.read(); if (done) break; buf += value;
@@ -921,12 +1074,13 @@ async function renderAirlock(r, phase) {
   const redacted = esc(r.redactedPreview).replace(/^\[user\] /gm, "").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, (m, type, n) => `<span class="chip">${type}·${n}</span>`);
   const findings = r.findings?.length ? " · " + r.findings.map((f) => esc(f).replace(/^local attacker re-identified/, "re-identification test cracked").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, "$1·$2")).join(" · ") : "";
   let bottom;
-  if (r.status === "pending") {
-    const name = approverFor(r.requiredRole);
+  if (r.status === "pending" && !canApprove()) {
+    bottom = `<div class="demo-verdict"><b>WAITING FOR AN APPROVER</b>Someone with the approver role in this gateway decides. You can withdraw it from the card in the chat.</div>`;
+  } else if (r.status === "pending") {
     bottom = `<div class="demo-decide">
       ${quorumHTML(r)}
       <label class="eyebrow" style="margin:0">Approver (ENS) · needs <span class="mono">${esc(r.requiredRole)}</span></label>
-      <div class="approver-row"><input class="field" id="demoApprover" value="${esc(name)}" placeholder="you.${esc(r.requiredRole)}" />${viaToggle()}</div>
+      <div class="approver-row">${approverField("demoApprover", r)}${viaToggle()}</div>
       <div class="hint-row"><span></span><button class="linkish" id="demoNoteToggle">+ Add a note for the requester</button></div>
       <input class="field" id="demoNote" placeholder="Note to the requester (sent with Seal)" hidden />
       <div class="row2"><button class="seal" id="demoSeal" title="Deny: nothing is sent; the local model answers instead">Seal (deny)</button><button class="hold" id="demoHold" title="Press and hold ~1s, then verify with World ID"><i class="fill"></i><span>Hold, then verify with World ID</span></button></div>
@@ -941,7 +1095,7 @@ async function renderAirlock(r, phase) {
     `<pre class="redacted-box">${deidView === "readable" ? deidReadable(r) : redacted}</pre>` +
     `<div class="riskline"><span class="tag ${r.riskLevel === "high" ? "denied" : "approved"}">risk ${esc(r.riskLevel)}</span><span class="muted">${Object.entries(r.entities).map(([k, v]) => `${v} ${k}`).join(" · ")}${findings}</span></div>` + bottom;
   $$("#deidSeg button", box).forEach((b) => (b.onclick = () => { deidView = b.dataset.d; renderAirlock(r); }));
-  if (r.status === "pending") {
+  if (r.status === "pending" && canApprove()) {
     wireVia(box);
     $("#demoNoteToggle").onclick = () => { $("#demoNote").hidden = false; $("#demoNoteToggle").hidden = true; $("#demoNote").focus(); };
     $("#demoSeal").onclick = async () => { sealFlash(); await post(`/approvals/${r.id}/deny`, { reason:$("#demoNote").value.trim() || "sealed by reviewer" }); };
@@ -987,11 +1141,12 @@ function heldCard(r) {
 }
 
 /* ---------- enroll ---------- */
-$("#enrollGo").onclick = async () => {
-  const name = $("#enrollName").value.trim(), out = $("#enrollOut");
+$("#enrollGo").onclick = () => enrollAs($("#enrollName").value.trim(), $("#enrollOut"), $("#enrollQr"));
+/** World ID once, then the approver's ENS subname holds a commitment to that human. Your own gateways: only yourself. */
+async function enrollAs(name, out, qrBox) {
   if (!name) { out.textContent = "Enter the approver's ENS name first."; return; }
   if (cfg.worldIdAgents && cfg.worldIdMode !== "mock" && via === "oidc") {
-    const url = `/enroll/oidc?approverName=${encodeURIComponent(name)}`;
+    const url = api(`/enroll/oidc?approverName=${encodeURIComponent(name)}`);
     if (!(worldidPopup = window.open(url, "worldid", "popup,width=520,height=720"))) location.href = url;
     out.textContent = "World ID for Agents sign-in opened… the subname and commitment are written to ENS when it completes.";
     return;
@@ -1008,18 +1163,18 @@ $("#enrollGo").onclick = async () => {
       const ctx = await j(`/enroll/worldid?approverName=${encodeURIComponent(name)}`);
       const req = await IDKit.request({ app_id:ctx.app_id, action:ctx.action, action_description:`Become an Airlock approver: ${name}`, rp_context:ctx.rp_context, allow_legacy_proofs:!!ctx.allow_legacy_proofs, environment:ctx.environment }).preset(IDKit[ctx.preset ?? "proofOfHuman"]({ signal:ctx.signal }));
       const qr = qrcode(0, "M"); qr.addData(req.connectorURI); qr.make();
-      $("#enrollQr").innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App${ctx.environment === "staging" ? " or paste the link into simulator.worldcoin.org" : ""}.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
+      qrBox.innerHTML = qr.createImgTag(4) + `<div class="muted" style="font-size:13px">Scan with World App${ctx.environment === "staging" ? " or paste the link into simulator.worldcoin.org" : ""}.<br/><a href="${esc(req.connectorURI)}" target="_blank">open link</a></div>`;
       out.textContent = "Waiting for World App…";
       const res = await req.pollUntilCompletion({ timeout:180000 });
       if (!res.success) { out.textContent = "World ID: " + res.error; return; }
       proof = res.result;
     }
     const d = await post("/enroll", { ...proof, approverName:name });
-    $("#enrollQr").innerHTML = "";
+    qrBox.innerHTML = "";
     out.textContent = d.error ? `✗ ${d.error}` : `✓ enrolled ${d.approverName}\ncommitment ${d.commitment}\nstored in ${cfg.ensMode.startsWith("sepolia") ? "ENS text record airlock.approver" : "data/approvers.json (static mode)"}`;
-    if (!d.error) toast("ENROLLED", d.approverName);
+    if (!d.error) { toast("ENROLLED", d.approverName); if (!isDemo()) loadTeam(); }
   } catch (e) { out.textContent = "Enroll failed: " + e.message; }
-};
+}
 
 /* ---------- notifications ---------- */
 const notifyOn = () => "Notification" in window && Notification.permission === "granted";
@@ -1038,8 +1193,8 @@ async function loadOverview() {
   const [a, q] = await Promise.all([j("/audit"), j("/approvals")]);
   const recs = a.records, day = Date.now() - 86400000, today = recs.filter((r) => r.timestamp > day);
   const c = (d, list = today) => list.filter((x) => x.decision === d).length;
-  $("#ovTitle").textContent = cfg.org ? `${cfg.org}` : "Airlock";
-  $("#ovSub").textContent = `Local AI by default. Frontier AI only with a verified human's consent. ${a.chain.ok ? "Audit chain intact." : `Audit chain broken at #${a.chain.brokenAt}.`}`;
+  $("#ovTitle").textContent = isDemo() ? cfg.org ?? "Airlock" : cfg.name;
+  $("#ovSub").textContent = `${isDemo() ? "" : `${cfg.org} · `}Local AI by default. Frontier AI only with a verified human's consent. ${a.chain.ok ? "Audit chain intact." : `Audit chain broken at #${a.chain.brokenAt}.`}`;
   $("#ovStats").innerHTML = [[today.length, "requests · 24h"], [c("auto"), "auto-sent"], [c("approved"), "approved"], [c("denied") + c("expired"), "sealed"], [c("blocked") + c("local"), "kept local"], [today.reduce((s, x) => s + (x.deidentified ?? 0), 0), "fields de-identified"]]
     .map(([v, l]) => `<div class="stat"><b>${v}</b>${l}</div>`).join("");
   const pend = q.filter((r) => r.status === "pending");
@@ -1072,14 +1227,15 @@ $("#apRefresh").onclick = loadApprovers;
 
 /* ---------- connect ---------- */
 function renderConnect() {
+  if (!isDemo()) return renderConnectTeam();
   const base = `${(cfg.publicUrl ?? location.origin).replace(/\/$/, "")}/v1`, model = `airlock/${cfg.defaultClaudeModel}`, agent = cfg.defaultAgent;
   const block = (title, note, code) => `<div class="panel"><h3>${title}</h3>${note ? `<p class="muted" style="margin:-4px 0 6px; font-size:13px">${note}</p>` : ""}<pre class="code">${esc(code)}</pre><button class="copy" data-copy="${esc(code)}" style="margin-top:6px">copy</button></div>`;
   $("#connectBody").innerHTML = [
-    block("Endpoint", "Any OpenAI-compatible client works. Models prefixed <b>airlock/</b> go through the airlock; everything else runs on the local model.", `Base URL   ${base}\nModel      ${model}\nAPI key    your Airlock access token`),
+    block("Endpoint", "Any OpenAI-compatible client works. Models prefixed <b>airlock/</b> go through the airlock; everything else runs on the local model.", `Base URL   ${base}\nModel      ${model}\nAPI key    one of your keys above (alk_…)`),
     block("Headers", "<b>agent</b>: its ENS name selects the policy · <b>user</b>: shown to approvers and audited · <b>session</b>: one approval covers the conversation · <b>justification</b>: optional, shown to approvers.", `x-airlock-agent: ${agent}\nx-airlock-user: you@company.com\nx-airlock-session: <conversation id>\nx-airlock-justification: <why>`),
-    block("curl", "", `curl ${base}/chat/completions \\\n  -H "authorization: Bearer $AIRLOCK_TOKEN" \\\n  -H "content-type: application/json" \\\n  -H "x-airlock-agent: ${agent}" \\\n  -H "x-airlock-user: you@company.com" \\\n  -d '{"model":"${model}","messages":[{"role":"user","content":"Hello"}]}'`),
-    block("Python (openai)", "", `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=AIRLOCK_TOKEN,\n    default_headers={"x-airlock-agent": "${agent}",\n                     "x-airlock-user": "you@company.com"})\nr = client.chat.completions.create(model="${model}",\n    messages=[{"role": "user", "content": "Hello"}])\nprint(r.choices[0].message.content)`),
-    block("LibreChat", "librechat.yaml → endpoints.custom", `- name: "Airlock"\n  apiKey: "\${AIRLOCK_TOKEN}"\n  baseURL: "${base}"\n  models: { default: ["${model}"] }\n  headers:\n    x-airlock-agent: "${agent}"\n    x-airlock-user: "{{LIBRECHAT_USER_EMAIL}}"`),
+    block("curl", "", `curl ${base}/chat/completions \\\n  -H "authorization: Bearer $AIRLOCK_KEY" \\\n  -H "content-type: application/json" \\\n  -H "x-airlock-agent: ${agent}" \\\n  -H "x-airlock-user: you@company.com" \\\n  -d '{"model":"${model}","messages":[{"role":"user","content":"Hello"}]}'`),
+    block("Python (openai)", "", `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=AIRLOCK_KEY,\n    default_headers={"x-airlock-agent": "${agent}",\n                     "x-airlock-user": "you@company.com"})\nr = client.chat.completions.create(model="${model}",\n    messages=[{"role": "user", "content": "Hello"}])\nprint(r.choices[0].message.content)`),
+    block("LibreChat", "librechat.yaml → endpoints.custom", `- name: "Airlock"\n  apiKey: "\${AIRLOCK_KEY}"\n  baseURL: "${base}"\n  models: { default: ["${model}"] }\n  headers:\n    x-airlock-agent: "${agent}"\n    x-airlock-user: "{{LIBRECHAT_USER_EMAIL}}"`),
     block("What happens to a request", "", `1. Classified and de-identified locally (names → ORG_1, PERSON_1 …)\n2. Re-identification test by the local model\n3. Policy read from the agent's ENS name\n4. Public → sent · confidential → waits for an approver (World ID + ENS role)\n   · blocked / sealed → answered by the local model\n5. Answer re-identified on the way back; decision appended to the audit chain`),
   ].join("");
   $$(".copy", $("#connectBody")).forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200); } catch {} }));
@@ -1094,29 +1250,34 @@ function tick(decision) {
   while ($("#ticker").children.length > 40) $("#ticker").firstChild.remove();
 }
 
-(async () => {
+async function enterGateway(slug) {
+  GW = slug;
   cfg = await j("/config");
-  $("#orgName").textContent = cfg.org ?? "";
+  if (cfg.error) { location.href = "/console"; return; }
+  document.title = `${cfg.name ?? "Airlock"} · Airlock`;
   via = cfg.worldIdAgents ? "oidc" : "idkit";
   paintBell();
-  $("#profileBtn").onclick = openProfile;
-  $("#profileDlg").addEventListener("close", () => {
-    if ($("#profileDlg").returnValue !== "save") return;
-    profile.user = $("#pfUser").value.trim(); profile.approver = $("#pfApprover").value.trim().toLowerCase(); saveProfile();
-  });
-  paintProfile();
-  const agents = [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")];
+  show$("screen-gw");
+  $("#gwSwitch").innerHTML = ME.gateways.map((g) => `<option value="${esc(g.slug)}" ${g.slug === slug ? "selected" : ""}>${esc(g.name)}</option>`).join("") + `<option value="">All gateways…</option>` + (ME.platform.canCreate ? `<option value="+">＋ New gateway</option>` : "");
+  $("#gwSwitch").onchange = (e) => (location.href = e.target.value === "+" ? "/console#new" : e.target.value ? `/console/${e.target.value}` : "/console");
+  $("#tabSettings").hidden = cfg.me?.role !== "admin" || isDemo();
+  $("#pgWho").textContent = `${cfg.me?.label ?? "you"}${cfg.me?.role ? ` (${cfg.me.role})` : ""}`;
+  $("#demoAgent").hidden = !isDemo();
+  $("#apDemo").hidden = !isDemo(); $("#teamBody").hidden = isDemo();
+  $("#ensAgentsPanel").hidden = !isDemo(); // one policy per gateway: nothing to compare
+  $("#ens-eyebrow") && ($("#ens-eyebrow").textContent = isDemo() ? "Agents & policy · ENSv2 · read live" : "Policy · ENSv2 · read live");
+  paintBanner();
+  const agents = isDemo() ? [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")] : [cfg.defaultAgent];
   $("#demoAgent").innerHTML = agents.map((a) => `<option value="${esc(a)}">${esc(short(a))}</option>`).join("");
   $("#pgExample").innerHTML = `<option value="">Examples…</option>` + EXAMPLES.map((x, i) => `<option value="${i}">${esc(x.label)}</option>`).join("");
   newConversation();
   $("#enrollVia").innerHTML = viaToggle(); wireVia($("#enrollVia"));
-  (await j("/audit")).records.slice(-40).forEach((r) => tick(r.decision));
+  ((await j("/audit")).records ?? []).slice(-40).forEach((r) => tick(r.decision));
   const hash = location.hash.slice(1);
   await loadQueue();
   if (!hash || TABS.includes(hash)) tab(hash || "overview");
   else if (hash === "enroll") tab("approvers");
   else { selected = hash; tab("queue"); show(selected); }
-  if (!profile.user) openProfile();
 
   // Live updates by polling a numbered event log: works through any proxy (Cloudflare tunnels buffer idle
   // SSE GETs). Events are dispatched to the same listeners an EventSource would use.
@@ -1177,12 +1338,376 @@ function tick(decision) {
       await loadQueue();
       if (demo.id) await demoApproval(demo.id);
       if (selected && !$("#tab-queue").hidden) await show(selected);
-      if (!$("#tab-approvers").hidden) loadApprovers();
+      if (!$("#tab-approvers").hidden) isDemo() ? loadApprovers() : loadTeam();
       const out = !$("#tab-playground").hidden ? $("#demoOut") : !$("#tab-approvers").hidden ? $("#enrollOut") : $("#out");
       if (out && e.data.title && !/^Approved|^Enrolled/.test(e.data.title)) out.textContent = msg;
     })();
   });
-})();
+}
+
+/* ---------- platform: who you are, which gateways you're in ---------- */
+let ME = null;
+const shortAddr = (a) => a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "";
+const ROLE_HINT = { admin:"settings, members, invites; can approve once enrolled", approver:"reviews held requests after enrolling with World ID", member:"sends requests with their own API keys" };
+function show$(id) { $$(".screen").forEach((el) => (el.hidden = el.id !== id)); window.scrollTo(0, 0); }
+function paintAcct() {
+  $$("[data-acct]").forEach((el) => {
+    el.innerHTML = `<button class="profile" data-acct-btn>${esc(shortAddr(ME.address))}</button><div class="acct-menu" hidden><div class="who">Signed in as<br>${esc(ME.address)}</div><a href="/console">Your gateways</a>${ME.platform.canCreate ? `<a href="/console#new">New gateway</a>` : ""}<button data-signout>Sign out</button></div>`;
+    const menu = $(".acct-menu", el);
+    $("[data-acct-btn]", el).onclick = (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; };
+    $("[data-signout]", el).onclick = async () => { await send("POST", "/api/auth/logout"); location.href = "/console"; };
+  });
+  document.addEventListener("click", () => $$(".acct-menu").forEach((m) => (m.hidden = true)));
+}
+
+/** Sign-In with Ethereum: the server writes the message, the wallet signs it (no transaction, no gas). */
+async function signIn() {
+  const err = $("#authErr"); err.textContent = "";
+  if (!window.ethereum) { err.innerHTML = `No browser wallet found. Install one (MetaMask, Rabby, Coinbase Wallet), then reload this page.`; return; }
+  const btn = $("#signIn"); btn.disabled = true; btn.textContent = "Check your wallet…";
+  try {
+    const [address] = await window.ethereum.request({ method:"eth_requestAccounts" });
+    const chainId = parseInt(await window.ethereum.request({ method:"eth_chainId" }), 16);
+    const n = await send("POST", "/api/auth/nonce", { address, chainId });
+    if (n.error) throw new Error(n.error);
+    const hex = "0x" + [...new TextEncoder().encode(n.message)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const signature = await window.ethereum.request({ method:"personal_sign", params:[hex, address] });
+    const v = await send("POST", "/api/auth/verify", { message:n.message, signature });
+    if (v.error) throw new Error(v.error);
+    boot();
+  } catch (e) {
+    err.textContent = e.code === 4001 ? "You cancelled the signature. Nothing was signed." : `Sign-in failed: ${e.message}`;
+    btn.disabled = false; btn.textContent = "Sign in with your wallet";
+  }
+}
+$("#signIn").onclick = signIn;
+
+async function inviteSummary(code) {
+  const r = await j(`/api/invites/${encodeURIComponent(code)}`);
+  if (r.error) return { html:`<div class="invite-card"><b>This invite link isn't valid.</b> Ask for a new one.</div>`, r };
+  const state = r.status === "open" ? "" : ` <span class="pill failed">${r.status}</span>`;
+  return { r, html:`<div class="invite-card">${r.invitedBy ? `<b>${esc(r.invitedBy)}</b> invited you to` : "You're invited to"} <b>${esc(r.gateway.name)}</b> <span class="mono muted">(${esc(r.gateway.ens)})</span> as <b>${esc(r.role)}</b>${state}<div class="muted" style="font-size:13px; margin-top:4px">${esc(ROLE_HINT[r.role] ?? "")}</div></div>` };
+}
+
+async function boot() {
+  const res = await fetch("/api/me"); ME = await res.json();
+  const join = location.pathname.match(/^\/join\/([\w-]+)/)?.[1];
+  if (!ME.address) {
+    $("#authInvite").innerHTML = join ? (await inviteSummary(join)).html : "";
+    return show$("screen-auth");
+  }
+  paintAcct();
+  if (join) return showJoin(join);
+  const slug = location.pathname.match(/^\/console\/([a-z0-9-]+)/)?.[1];
+  if (slug) return enterGateway(slug);
+  if (location.hash === "#new" && ME.platform.canCreate) return showNew();
+  showHome();
+}
+
+function showHome() {
+  show$("screen-home");
+  history.replaceState(null, "", "/console");
+  const card = (g) => `<a class="gcard" href="/console/${esc(g.slug)}"><h3>${esc(g.name)}</h3><div class="ens">${esc(g.kind === "demo" ? "airlock.eth · shared showcase" : g.ens.name)}</div>
+    <div class="foot"><span class="pill ${esc(g.role)}">${esc(g.kind === "demo" ? "guest" : g.role)}</span>${g.kind === "demo" ? `<span class="pill">demo</span>` : `<span class="pill ${esc(g.ens.status)}">${g.ens.status === "live" ? "ENS live" : g.ens.status === "failed" ? "ENS setup failed" : "setting up ENS"}</span>`}<span class="muted" style="font-size:12.5px">as ${esc(g.label)}</span></div></a>`;
+  const mine = ME.gateways.filter((g) => g.kind !== "demo"), demo = ME.gateways.filter((g) => g.kind === "demo");
+  $("#homeCards").innerHTML = mine.map(card).join("") +
+    (ME.platform.canCreate ? `<a class="gcard new" href="/console#new" id="newCard"><b>＋ Create a gateway</b><span style="font-size:13px">Your models, your team, your ENS name</span></a>` : "") +
+    demo.map(card).join("");
+  $("#newCard") && ($("#newCard").onclick = (e) => { e.preventDefault(); history.pushState(null, "", "/console#new"); showNew(); });
+}
+
+/* ---------- model + policy forms (create and settings) ---------- */
+function modelsForm(v = {}) {
+  const l = v.local ?? { mode: ME.platform.sharedLocal ? "shared" : "custom" }, f = v.frontier ?? { provider:"anthropic", models:["claude-sonnet-5", "claude-opus-5-5"], defaultModel:"claude-sonnet-5" };
+  const keyHint = (k) => k ? `saved (${esc(k)}); leave empty to keep it` : "";
+  return `<fieldset class="fs"><legend>Local model</legend>
+    <p class="lede">Runs first on every request: de-identifies it and tries to re-identify the result. Answers when nothing may leave.</p>
+    <div class="choice">
+      ${ME.platform.sharedLocal ? `<label><input type="radio" name="localMode" value="shared" ${l.mode === "shared" ? "checked" : ""} /><span><b>Airlock-hosted</b> · ${esc(ME.platform.sharedLocal.model)}<small>Nothing to set up. It runs on this Airlock server, so this server sees your text before it's de-identified.</small></span></label>` : ""}
+      <label><input type="radio" name="localMode" value="custom" ${l.mode === "custom" ? "checked" : ""} /><span><b>My own endpoint</b> · any OpenAI-compatible server (vLLM, Ollama, LM Studio, llama.cpp)<small>${ME.platform.allowPrivateUpstreams ? "Any URL this server can reach." : "Needs a public URL. On a laptop: <code>cloudflared tunnel --url http://localhost:11434</code> and use the https URL it prints, plus <code>/v1</code>."}</small></span></label>
+    </div>
+    <div class="grid2" data-local-custom ${l.mode === "custom" ? "" : "hidden"}>
+      <label class="f"><span>Base URL</span><input class="field" name="localUrl" value="${esc(l.baseUrl ?? "")}" placeholder="https://my-box.trycloudflare.com/v1" /></label>
+      <label class="f"><span>Model</span><input class="field" name="localModel" value="${esc(l.model ?? "")}" placeholder="qwen3:32b" list="localModels" /><datalist id="localModels"></datalist></label>
+      <label class="f"><span>API key (optional)</span><input class="field" name="localKey" type="password" placeholder="${keyHint(l.apiKey)}" /></label>
+    </div>
+  </fieldset>
+  <fieldset class="fs"><legend>Frontier model</legend>
+    <p class="lede">Gets only de-identified text, and only when your policy (or an approver) allows it. Your key is encrypted on the server and never shown again.</p>
+    <div class="grid2">
+      <label class="f"><span>Provider</span><select class="field" name="provider"><option value="anthropic" ${f.provider === "anthropic" ? "selected" : ""}>Anthropic</option><option value="openai" ${f.provider === "openai" ? "selected" : ""}>OpenAI-compatible (OpenAI, OpenRouter, LiteLLM…)</option></select></label>
+      <label class="f"><span>Base URL</span><input class="field" name="frontierUrl" value="${esc(f.baseUrl ?? "")}" placeholder="${f.provider === "openai" ? "https://api.openai.com/v1" : "https://api.anthropic.com (default)"}" /></label>
+      <label class="f"><span>API key</span><input class="field" name="frontierKey" type="password" placeholder="${keyHint(f.apiKey) || (f.provider === "openai" ? "sk-…" : "sk-ant-…")}" /></label>
+      <label class="f"><span>Models members may use</span><input class="field" name="models" value="${esc((f.models ?? []).join(", "))}" placeholder="claude-sonnet-5, claude-opus-5-5" /><small class="muted">Comma-separated; * works as a wildcard. Written to ENS.</small></label>
+      <label class="f"><span>Default model</span><input class="field" name="defaultModel" value="${esc(f.defaultModel ?? "")}" placeholder="claude-sonnet-5" /></label>
+    </div>
+  </fieldset>`;
+}
+function policyForm(p = { maxClass:"confidential", egress:"approval", highRiskQuorum:2 }) {
+  const opt = (name, value, cur, label, hint) => `<label><input type="radio" name="${name}" value="${value}" ${String(cur) === String(value) ? "checked" : ""} /><span><b>${label}</b><small>${hint}</small></span></label>`;
+  return `<fieldset class="fs"><legend>Policy</legend>
+    <p class="lede">Stored as ENS text records on your gateway's name. Every request reads it live.</p>
+    <div class="grid2">
+      <div><label class="f"><span>Highest data class that may leave</span></label><div class="choice">
+        ${opt("maxClass", "internal", p.maxClass, "Internal", "Confidential data never leaves; the local model answers.")}
+        ${opt("maxClass", "confidential", p.maxClass, "Confidential", "May leave, de-identified, under the rules on the right.")}
+      </div></div>
+      <div><label class="f"><span>Frontier egress</span></label><div class="choice">
+        ${opt("egress", "approval", p.egress, "Approval", "Public and internal go out; confidential waits for an approver.")}
+        ${opt("egress", "block", p.egress, "Local only", "Nothing leaves. Useful while you set things up.")}
+      </div></div>
+    </div>
+    <label class="f"><span>When the local re-identification test finds high risk</span></label><div class="choice">
+      ${opt("quorum", 2, p.highRiskQuorum, "Two different people approve", "World ID makes sure it's two humans, not one person with two accounts.")}
+      ${opt("quorum", 1, p.highRiskQuorum, "One approver", "Same as normal confidential requests.")}
+      ${opt("quorum", 0, p.highRiskQuorum, "Never leaves", "High-risk requests are always answered locally.")}
+    </div>
+  </fieldset>`;
+}
+function wireModels(root) {
+  const sync = () => { $("[data-local-custom]", root).hidden = root.querySelector('[name="localMode"]:checked')?.value !== "custom"; };
+  $$('[name="localMode"]', root).forEach((r) => (r.onchange = sync));
+  const prov = $('[name="provider"]', root);
+  prov.onchange = () => {
+    $('[name="frontierUrl"]', root).placeholder = prov.value === "openai" ? "https://api.openai.com/v1" : "https://api.anthropic.com (default)";
+    $('[name="frontierKey"]', root).placeholder = prov.value === "openai" ? "sk-…" : "sk-ant-…";
+  };
+}
+/** Form → API body. Blank key fields are left out, so a saved key is kept. */
+function readSettings(form) {
+  const v = (n) => form.querySelector(`[name="${n}"]`)?.value.trim() ?? "";
+  const checked = (n) => form.querySelector(`[name="${n}"]:checked`)?.value;
+  const local = { mode:checked("localMode") ?? "custom" };
+  if (local.mode === "custom") { local.baseUrl = v("localUrl"); local.model = v("localModel"); if (v("localKey")) local.apiKey = v("localKey"); }
+  const frontier = { provider:v("provider"), models:v("models").split(",").map((x) => x.trim()).filter(Boolean), defaultModel:v("defaultModel") };
+  if (v("frontierUrl")) frontier.baseUrl = v("frontierUrl");
+  if (v("frontierKey")) frontier.apiKey = v("frontierKey");
+  return { local, frontier, policy:{ maxClass:checked("maxClass"), egress:checked("egress"), highRiskQuorum:Number(checked("quorum")) } };
+}
+async function testModels(form, out, slug) {
+  out.innerHTML = `<div class="muted" style="font-size:13px">Testing…</div>`;
+  const t = await post("/api/models/test", { ...readSettings(form), slug });
+  const row = (k, x) => `<div class="srow ${x.ok ? "" : "bad"}"><span class="dot"></span><b>${k}</b><span class="muted mono" style="font-size:12px; word-break:break-all">${esc(x.detail)}</span></div>`;
+  out.innerHTML = t.error ? `<div class="err">${esc(t.error)}</div>` : row("Local model", t.local) + row("Frontier", t.frontier);
+  if (t.local?.models?.length) $("#localModels", form) && ($("#localModels", form).innerHTML = t.local.models.map((m) => `<option value="${esc(m)}">`).join(""));
+}
+
+/* ---------- create ---------- */
+function showNew() {
+  show$("screen-new");
+  const form = $("#newForm");
+  $("#slugRoot").textContent = "." + ME.platform.root;
+  $("#newModels").innerHTML = modelsForm(); $("#newPolicy").innerHTML = policyForm();
+  wireModels(form);
+  const slugIn = form.slug, nameIn = form.name; let touched = false, timer;
+  const toSlug = (x) => x.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+  const check = async () => {
+    const sl = slugIn.value.trim(); const el = $("#slugCheck");
+    if (!sl) { el.textContent = ""; return; }
+    el.className = "check"; el.textContent = "checking…";
+    const r = await j(`/api/slug/${encodeURIComponent(sl)}`);
+    if (slugIn.value.trim() !== sl) return;
+    el.className = `check ${r.ok ? "ok" : "bad"}`; el.textContent = r.ok ? `✓ ${r.name} is available` : `✗ ${r.error}`;
+  };
+  nameIn.oninput = () => { if (!touched) { slugIn.value = toSlug(nameIn.value); clearTimeout(timer); timer = setTimeout(check, 400); } };
+  slugIn.oninput = () => { touched = true; clearTimeout(timer); timer = setTimeout(check, 400); };
+  $("#newTest").onclick = () => testModels(form, $("#newTestOut"));
+  form.onsubmit = async (e) => {
+    e.preventDefault(); $("#newErr").textContent = "";
+    const btn = $("#newCreate"); btn.disabled = true; btn.textContent = "Creating…";
+    const r = await post("/api/gateways", { name:nameIn.value.trim(), slug:slugIn.value.trim(), label:form.label.value.trim().toLowerCase(), ...readSettings(form) });
+    btn.disabled = false; btn.textContent = "Create gateway";
+    if (r.error) { $("#newErr").textContent = r.error; return; }
+    form.hidden = true; $("#newProgress").hidden = false;
+    provisionProgress(r.slug, $("#newProgress"), () => (location.href = `/console/${r.slug}`));
+  };
+}
+/** Live view of the ENS setup: eight Sepolia transactions, about a minute. */
+async function provisionProgress(slug, box, done) {
+  for (;;) {
+    const g = await j(`/api/gateways/${slug}`);
+    const steps = g.steps ?? [], doneSteps = g.ensState?.done ?? {};
+    const now = steps.find((x) => !doneSteps[x]);
+    box.innerHTML = `<div class="panel"><h3>${g.ens.status === "live" ? "✓ " : ""}${esc(g.ens.name)}</h3>
+      <p class="muted" style="margin:0">${g.ens.status === "live" ? "Your gateway is live on ENS." : g.ens.status === "failed" ? "Setting up ENS stopped. Every step is safe to retry." : "Registering your name on Sepolia and writing your policy. About a minute; you can already open the gateway."}</p>
+      <ol class="steps">${steps.map((x) => `<li class="${doneSteps[x] ? "done" : g.ens.status === "provisioning" && x === now ? "now" : ""}"><span></span><span>${esc(x)}</span>${doneSteps[x] && doneSteps[x] !== "existing" ? `<a class="mono" style="font-size:11px" target="_blank" href="https://sepolia.etherscan.io/tx/${esc(doneSteps[x])}">tx ↗</a>` : "<span></span>"}</li>`).join("")}</ol>
+      ${g.ens.error ? `<div class="err">${esc(g.ens.error)}</div>` : ""}
+      <div class="inline" style="margin-top:14px">${g.ens.status === "failed" ? `<button class="btn dark" id="provRetry">Retry</button>` : ""}<a class="btn ${g.ens.status === "live" ? "dark" : ""}" href="/console/${esc(slug)}" style="text-decoration:none">Open gateway →</a></div></div>`;
+    $("#provRetry") && ($("#provRetry").onclick = async () => { await post(`/api/gateways/${slug}/provision`); provisionProgress(slug, box, done); });
+    if (g.ens.status !== "provisioning") { if (g.ens.status === "live") setTimeout(done, 1200); return; }
+    await new Promise((ok) => setTimeout(ok, 3000));
+  }
+}
+
+/* ---------- join ---------- */
+async function showJoin(code) {
+  show$("screen-join");
+  const { r, html } = await inviteSummary(code);
+  const box = $("#joinBody");
+  if (r.error || r.status !== "open" || r.alreadyMember) {
+    box.innerHTML = html + (r.alreadyMember ? `<p>You're already a member. <a href="/console/${esc(r.gateway.slug)}">Open ${esc(r.gateway.name)} →</a></p>` : `<p><a href="/console">Your gateways →</a></p>`);
+    return;
+  }
+  box.innerHTML = html + `<form id="joinForm"><label class="f"><span>Your name in ${esc(r.gateway.name)}</span><input class="field" name="label" value="${esc(r.label ?? "")}" required pattern="[a-z0-9]([a-z0-9\\-]*[a-z0-9])?" placeholder="alice" /><small class="muted">Lowercase. Shown to approvers and in the audit log${["approver", "admin"].includes(r.role) ? `; your approver name becomes <span class="mono">&lt;name&gt;.${esc(r.gateway.ens.replace(/^/, "approvers."))}</span>` : ""}.</small></label>
+    <div class="inline" style="margin-top:14px"><button class="btn dark big">Join ${esc(r.gateway.name)}</button></div><div class="err" id="joinErr"></div></form>`;
+  $("#joinForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const d = await post(`/api/invites/${encodeURIComponent(code)}/accept`, { label:e.target.label.value.trim().toLowerCase() });
+    if (d.error) { $("#joinErr").textContent = d.error; return; }
+    location.href = `/console/${d.slug}${["approver", "admin"].includes(d.role) ? "#approvers" : ""}`;
+  };
+}
+
+/* ---------- inside a gateway ---------- */
+async function paintBanner() {
+  if (isDemo()) { $("#gwBanner").innerHTML = `<div class="banner">This is the shared demo gateway: every signed-in visitor can play every part. <a href="/console#new">Create your own gateway →</a></div>`; return; }
+  const g = await j(`/api/gateways/${GW}`);
+  let html = "";
+  if (g.ens?.status === "provisioning") html = `<div class="banner">Setting up ${esc(g.ens.name)} on Sepolia: ${esc(g.ens.step ?? "")}. Until it's live, the policy can't be read, so nothing leaves (local answers only). <a href="#" id="bnWatch">Watch</a></div>`;
+  else if (g.ens?.status === "failed") html = `<div class="banner bad">ENS setup stopped: ${esc(g.ens.error ?? "")}. ${g.role === "admin" ? `<button class="btn" id="bnRetry">Retry</button>` : "Ask an admin to retry."}</div>`;
+  else if (canApprove()) {
+    const team = await j(`/api/gateways/${GW}/members`);
+    const mine = Array.isArray(team) && team.find((m) => m.address === cfg.me.address);
+    if (mine && !mine.enrolled) html = `<div class="banner">You can approve requests here once you verify with World ID. It's one scan, and your approver name <span class="mono">${esc(mine.approverName)}</span> goes on ENS. <button class="btn dark" id="bnEnroll">Enroll now</button></div>`;
+  }
+  $("#gwBanner").innerHTML = html;
+  $("#bnRetry") && ($("#bnRetry").onclick = async () => { await post(`/api/gateways/${GW}/provision`); paintBanner(); });
+  $("#bnEnroll") && ($("#bnEnroll").onclick = () => tab("approvers"));
+  if (g.ens?.status === "provisioning") setTimeout(paintBanner, 5000);
+  if ($("#bnWatch")) $("#bnWatch").onclick = (e) => { e.preventDefault(); tab("ens"); };
+}
+
+async function loadTeam() {
+  const box = $("#teamBody");
+  const [team, invites] = await Promise.all([j(`/api/gateways/${GW}/members`), cfg.me.role === "admin" ? j(`/api/gateways/${GW}/invites`) : Promise.resolve([])]);
+  const admin = cfg.me.role === "admin", mine = team.find((m) => m.address === cfg.me.address);
+  const roleCell = (m) => admin && !m.owner ? `<select class="agent-select" data-role="${esc(m.address)}">${["admin", "approver", "member"].map((r) => `<option ${r === m.role ? "selected" : ""}>${r}</option>`).join("")}</select>` : `<span class="pill ${esc(m.role)}">${esc(m.owner ? "owner" : m.role)}</span>`;
+  const status = (m) => !m.approverName ? `<span class="muted">—</span>` : m.enrolled ? `<span class="tag approved">enrolled</span>` : `<span class="tag pending">not enrolled</span>`;
+  box.innerHTML = `<div class="ledger-head"><div><p class="eyebrow">Members</p><h2>${team.length} ${team.length === 1 ? "person" : "people"} in ${esc(cfg.name)}</h2><div class="root">approver role ${ensApp(cfg.approverRole)}</div></div><div><button class="btn" id="teamRefresh">Refresh</button></div></div>
+    <div class="ens-grid">
+      <div class="panel"><h3>People</h3><table class="matrix"><tr><th>name</th><th>role</th><th>approver (ENS)</th><th>keys</th><th></th></tr>${team.map((m) => `<tr><td>${esc(m.label)}${m.address === cfg.me.address ? ' <span class="muted">(you)</span>' : ""}<br><span class="muted" style="font-size:11px">${esc(shortAddr(m.address))}</span></td><td>${roleCell(m)}</td><td>${status(m)}${m.approverName ? `<br><span class="muted" style="font-size:11px">${esc(m.approverName.split(".")[0])}.approvers…</span>` : ""}</td><td>${m.keys}</td><td>${!m.owner && (admin || m.address === cfg.me.address) ? `<button class="linkish" data-remove="${esc(m.address)}">${m.address === cfg.me.address ? "leave" : "remove"}</button>` : ""}</td></tr>`).join("")}</table>
+        <p class="muted" style="font-size:12.5px; margin:10px 0 0">Removing someone deletes their API keys and takes their approver name off ENS. Admins can approve too, once enrolled.</p></div>
+      <div style="display:grid; gap:16px; align-content:start">
+        ${mine?.approverName ? `<div class="panel"><h3>Your approver identity</h3>
+          <p class="muted" style="margin:-4px 0 10px; font-size:13px">${mine.enrolled ? "You're enrolled: you can approve held requests." : "Verify with World ID once. Airlock creates your ENS name and stores only a commitment to it, never who you are."}</p>
+          <div class="mono" style="font-size:12.5px; word-break:break-all">${ensApp(mine.approverName)} ${status(mine)}</div>
+          ${mine.enrolled ? "" : `<div id="teamVia" style="margin-top:8px"></div><button class="btn dark" id="teamEnroll" style="margin-top:10px">Enroll with World ID</button><div id="teamQr" style="margin-top:10px; display:flex; gap:14px; align-items:center"></div><pre class="out" id="teamOut"></pre>`}</div>` : ""}
+        ${admin ? `<div class="panel"><h3>Invite someone</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Anyone with the link can join once, with their wallet, within 7 days.</p>
+          <div class="inline"><select class="field" id="invRole" style="max-width:150px">${["member", "approver", "admin"].map((r) => `<option value="${r}">${r}</option>`).join("")}</select><input class="field" id="invLabel" placeholder="their name (optional)" /><button class="btn dark" id="invGo">Create link</button></div>
+          <div class="muted" id="invHint" style="font-size:12.5px; margin-top:6px">${ROLE_HINT.member}</div><div id="invOut"></div>
+          ${invites.length ? `<h3 style="margin-top:16px; font-size:15px">Open invites</h3>${invites.map((i) => `<div class="prow"><span><span class="pill ${esc(i.role)}">${esc(i.role)}</span> ${esc(i.label ?? "anyone")} <span class="muted" style="font-size:12px">· expires ${new Date(i.expiresAt).toLocaleDateString()}</span></span><button class="linkish" data-uninvite="${esc(i.id)}">cancel</button></div>`).join("")}` : ""}</div>` : ""}
+      </div>
+    </div>`;
+  $("#teamRefresh").onclick = loadTeam;
+  $$("[data-role]", box).forEach((sel) => (sel.onchange = async () => {
+    const d = await send("PATCH", `/api/gateways/${GW}/members/${sel.dataset.role}`, { role:sel.value });
+    toast(d.error ? "NOT CHANGED" : "ROLE CHANGED", d.error ?? `now ${sel.value}${sel.value === "member" ? " (approver name revoked on ENS)" : ""}`); loadTeam();
+  }));
+  $$("[data-remove]", box).forEach((b) => (b.onclick = async () => {
+    const self = b.dataset.remove === cfg.me.address;
+    if (!confirm(self ? `Leave ${cfg.name}? Your API keys stop working.` : "Remove this member? Their API keys stop working and their approver name is revoked on ENS.")) return;
+    b.textContent = "…"; const d = await send("DELETE", `/api/gateways/${GW}/members/${b.dataset.remove}`);
+    if (d.error) return toast("NOT REMOVED", d.error);
+    if (self) location.href = "/console"; else loadTeam();
+  }));
+  $$("[data-uninvite]", box).forEach((b) => (b.onclick = async () => { await send("DELETE", `/api/gateways/${GW}/invites/${b.dataset.uninvite}`); loadTeam(); }));
+  if ($("#invRole")) {
+    $("#invRole").onchange = () => ($("#invHint").textContent = ROLE_HINT[$("#invRole").value]);
+    $("#invGo").onclick = async () => {
+      const d = await post(`/api/gateways/${GW}/invites`, { role:$("#invRole").value, label:$("#invLabel").value.trim() || undefined });
+      $("#invOut").innerHTML = d.error ? `<div class="err">${esc(d.error)}</div>` : `<div class="secret">${esc(d.url)}</div><button class="copy" data-copy="${esc(d.url)}" style="margin-top:6px">copy link</button><span class="muted" style="font-size:12.5px"> · send it to them; it works once.</span>`;
+      $$(".copy", $("#invOut")).forEach((b) => (b.onclick = async () => { await navigator.clipboard?.writeText(b.dataset.copy); b.textContent = "copied"; }));
+    };
+  }
+  if ($("#teamEnroll")) {
+    $("#teamVia").innerHTML = viaToggle(); wireVia($("#teamVia"));
+    $("#teamEnroll").onclick = () => enrollAs(mine.approverName, $("#teamOut"), $("#teamQr"));
+  }
+}
+
+/* ---------- API keys ---------- */
+async function loadKeys() {
+  const panel = $("#keyCreate").closest(".panel");
+  if (isDemo()) { panel.innerHTML = `<h3>API keys</h3><p class="muted" style="margin:0; font-size:13.5px">The shared demo is for the Playground. To connect your own agents, <a href="/console#new">create a gateway</a>: your models, your team, your keys.</p>`; return; }
+  const list = await j(`/api/gateways/${GW}/keys`);
+  const admin = cfg.me.role === "admin" && !isDemo();
+  $("#keyList").innerHTML = Array.isArray(list) && list.length ? `<table class="matrix"><tr><th>name</th><th>key</th>${admin ? "<th>member</th>" : ""}<th>created</th><th>last used</th><th></th></tr>` +
+    list.map((k) => `<tr><td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}…</td>${admin ? `<td>${esc(k.memberLabel)}${k.mine ? " (you)" : ""}</td>` : ""}<td>${ago(k.createdAt)}</td><td>${k.lastUsedAt ? ago(k.lastUsedAt) : "never"}</td><td><button class="linkish" data-delkey="${esc(k.id)}">delete</button></td></tr>`).join("") + "</table>"
+    : `<div class="muted" style="font-size:13px">No keys yet.</div>`;
+  $$("[data-delkey]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this key? Agents using it stop working.")) return; await send("DELETE", `/api/gateways/${GW}/keys/${b.dataset.delkey}`); loadKeys(); }));
+}
+$("#keyCreate").onclick = async () => {
+  const d = await post(`/api/gateways/${GW}/keys`, { name:$("#keyName").value.trim() });
+  if (d.error) { $("#keyNew").innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
+  $("#keyName").value = "";
+  $("#keyNew").innerHTML = `<div class="secret">${esc(d.secret)}</div><div class="inline" style="margin-top:6px"><button class="copy" data-copy="${esc(d.secret)}">copy</button><span class="muted" style="font-size:12.5px">Shown once. Store it in your agent's config now.</span></div>`;
+  $$(".copy", $("#keyNew")).forEach((b) => (b.onclick = async () => { await navigator.clipboard?.writeText(b.dataset.copy); b.textContent = "copied"; }));
+  loadKeys(); renderConnect();
+};
+function renderConnectTeam() {
+  const base = `${location.origin}/v1`, model = `airlock/${cfg.defaultClaudeModel}`;
+  const block = (title, note, code) => `<div class="panel"><h3>${title}</h3>${note ? `<p class="muted" style="margin:-4px 0 6px; font-size:13px">${note}</p>` : ""}<pre class="code">${esc(code)}</pre><button class="copy" data-copy="${esc(code)}" style="margin-top:6px">copy</button></div>`;
+  $("#connectBody").innerHTML = [
+    block("Endpoint", `The key picks the gateway and who you are; no other headers needed. <b>airlock/…</b> models go through the airlock (${esc((cfg.claudeModels ?? []).join(", "))}); <b>local/…</b> stays on your local model; <b>auto</b> tries local first.`, `Base URL   ${base}\nModel      ${model}\nAPI key    alk_… (create one above)`),
+    block("curl", "", `curl ${base}/chat/completions \\\n  -H "authorization: Bearer $AIRLOCK_KEY" \\\n  -H "content-type: application/json" \\\n  -d '{"model":"${model}","messages":[{"role":"user","content":"Hello"}]}'`),
+    block("Python (openai)", "Optional headers: x-airlock-session (one approval covers the conversation) and x-airlock-justification (shown to approvers).", `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=AIRLOCK_KEY)\nr = client.chat.completions.create(model="${model}",\n    messages=[{"role": "user", "content": "Hello"}])\nprint(r.choices[0].message.content)`),
+    block("LibreChat", "librechat.yaml → endpoints.custom", `- name: "Airlock"\n  apiKey: "\${AIRLOCK_KEY}"\n  baseURL: "${base}"\n  models: { default: ["${model}"] }`),
+    block("What happens to a request", "", `1. De-identified by your local model (names → ORG_1, PERSON_1 …)\n2. Re-identification test by the local model\n3. Policy read live from ${cfg.defaultAgent}\n4. Public → sent · confidential → waits for an approver (World ID + ENS role)\n   · blocked / sealed → answered by the local model\n5. Answer re-identified on the way back; decision appended to the audit chain`),
+  ].join("");
+  $$(".copy", $("#connectBody")).forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200); } catch {} }));
+}
+
+/* ---------- settings (admins) ---------- */
+/** Send a transaction from the signed-in wallet, on the chain it's meant for. Returns the tx hash. */
+async function sendFromWallet({ to, data, chainId }) {
+  if (!window.ethereum) throw new Error("no browser wallet found");
+  const [from] = await window.ethereum.request({ method:"eth_requestAccounts" });
+  if (from.toLowerCase() !== ME.address.toLowerCase()) throw new Error(`your wallet is on ${shortAddr(from)}; switch it to ${shortAddr(ME.address)}, the account you signed in with`);
+  const hex = "0x" + chainId.toString(16);
+  if ((await window.ethereum.request({ method:"eth_chainId" })) !== hex) {
+    try { await window.ethereum.request({ method:"wallet_switchEthereumChain", params:[{ chainId:hex }] }); }
+    catch (e) { throw e.code === 4001 ? e : new Error("switch your wallet to Sepolia and try again"); }
+  }
+  return window.ethereum.request({ method:"eth_sendTransaction", params:[{ from, to, data }] });
+}
+
+async function loadSettings() {
+  const g = await j(`/api/gateways/${GW}`);
+  if (!g.settings?.local) return;
+  const form = $("#setForm");
+  $("#setTitle").textContent = g.name;
+  $("#setSub").innerHTML = `${ensApp(g.ens.name)} · <span class="pill ${esc(g.ens.status)}">${esc(g.ens.status)}</span> · owner ${esc(shortAddr(g.owner))}`;
+  form.name.value = g.name;
+  $("#setModels").innerHTML = modelsForm(g.settings); $("#setPolicy").innerHTML = policyForm(g.settings.policy);
+  wireModels(form);
+  $("#setErr").textContent = ""; $("#setOk").textContent = ""; $("#setTestOut").innerHTML = "";
+  $("#setTest").onclick = () => testModels(form, $("#setTestOut"), GW);
+  $("#setPolicyNote").innerHTML = g.policySigner === "owner"
+    ? `Policy changes are a Sepolia transaction signed by the owner's wallet (${esc(shortAddr(g.owner))}). The platform holds no rights to these records, as the Policy tab's “Who may change what” table shows from the live contract.`
+    : "";
+  form.onsubmit = async (e) => {
+    e.preventDefault(); $("#setErr").textContent = ""; $("#setOk").textContent = "";
+    const btn = $("#setSave"); btn.disabled = true; btn.textContent = "Saving…";
+    const body = { name:form.name.value.trim(), ...readSettings(form) };
+    let d = await send("PATCH", `/api/gateways/${GW}`, body);
+    if (d.sign) {
+      try {
+        btn.textContent = "Confirm in your wallet…";
+        const policyTx = await sendFromWallet(d.sign);
+        btn.textContent = "Waiting for Sepolia…";
+        d = await send("PATCH", `/api/gateways/${GW}`, { ...body, policyTx });
+      } catch (err) {
+        d = { error: err.code === 4001 ? "You rejected the transaction. Nothing changed." : `Wallet: ${err.message}` };
+      }
+    }
+    btn.disabled = false; btn.textContent = "Save";
+    if (d.error) { $("#setErr").textContent = d.error; return; }
+    $("#setOk").innerHTML = `Saved.${d.tx ? ` Policy written to ENS: <a target="_blank" href="https://sepolia.etherscan.io/tx/${esc(d.tx)}">tx ↗</a>` : ""}`;
+    cfg = await j("/config"); ME = await (await fetch("/api/me")).json();
+  };
+}
+
+boot();
 </script>
 </body>
 </html>
