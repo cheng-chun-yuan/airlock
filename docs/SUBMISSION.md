@@ -8,6 +8,8 @@
 > Human-consent gateway for AI agents. AI for power, humans for consent, blockchain for certainty.
 
 **Description:**
+> **The human-consent gateway for AI agents: frontier AI for power, humans for consent, blockchain for certainty.**
+>
 > AI agents leak confidential data the moment they call a frontier model. Airlock is an OpenAI-compatible gateway that any agent (LibreChat, Hermes, Claude Code) can point at instead of a model provider. It works in six steps:
 >
 > 1. **Local by default.** Requests are answered by a local model.
@@ -17,7 +19,7 @@
 > 5. **Human approval.** For confidential data, Airlock pauses the agent until a human approves through World ID for Agents. The approval is bound to the payload's hash, and the approver must hold a live ENS subname under the approver role. Revoke the subname and the approval fails.
 > 6. **Send, restore and audit.** Only the redacted text leaves, streamed. Real names are restored locally. Every decision is appended to a hash-chained audit log whose Merkle root is anchored to ENS.
 >
-> Anyone can run their own: sign in with a wallet, create a gateway and it becomes `<name>.airlock.eth` on ENSv2 Sepolia, with its own resolver, policy, approver role and audit anchor. Bring your own local and frontier models, invite people with a role (member, approver, admin), and give each agent a per-member API key. Admins assign each member an agent whose ENS policy governs everything they send.
+> Anyone can run their own: sign in with a wallet, create a gateway and it becomes `<name>.airlock.eth` on ENSv2 Sepolia, with its own resolver, policy, approver role and audit anchor. Use the Airlock-hosted models (no keys needed) or bring your own local and frontier models, invite people with a role (member, approver, admin), and give each agent a per-member API key. Admins assign each member an agent whose ENS policy governs everything they send.
 
 **How it's made:**
 > - **Gateway:** TypeScript monorepo with a Hono server that speaks the OpenAI API, including streaming. It uses a local Qwen 3.5 on vLLM (NVIDIA GB10) and a local codex-lb (`gpt-5.6-sol`) as the frontier upstream.
@@ -27,9 +29,9 @@
 > - **ENSv2 on Sepolia:** a script builds the whole name tree with viem: a UserRegistry per level, a PermissionedResolver, MockUSDC commit-reveal registration, and subnames with expiry. The Enhanced Access Control split lets only a security account change policy records, while the gateway may write only `airlock.approver` and `airlock.auditRoot`.
 > - **Design finding:** only leaf names get a resolver. Otherwise the wildcard lookup of the name-keyed resolver lets unregistered approvers keep resolving.
 > - **Self-serve gateways:** Sign-In with Ethereum (no shared token). Creating a gateway runs 11 resumable Sepolia steps: a PermissionedResolver and two UserRegistries of its own, `<slug>.airlock.eth` owned by the creator's wallet, `policy.`, `approvers.`, `audit.` and `agents.` subnames, the policy records, then a hand-over: on the resolver the platform key keeps only `ROLE_SET_TEXT` on `airlock.approver` and `airlock.auditRoot` (plus the approvers registry, to enroll and revoke approvers), so later policy changes and agent links are transactions the owner's wallet signs, which the server checks from the receipt.
-> - **Per-gateway models and keys:** local = Airlock-hosted or your own OpenAI-compatible URL (public addresses only on the hosted server); frontier = Anthropic or OpenAI-compatible with the gateway's own key, AES-256-GCM sealed at rest. Per-member API keys (`alk_…`) pick the gateway, the person and the agent; identity headers from clients are ignored.
-> - **Console:** a single HTML page with the chamber view, hold-to-approve, linked redaction view, ledger, a live ENS panel, members/invites, agents and settings.
-> - **Tests:** 17 unit tests, including OIDC against a mock IdP, plus end-to-end runs against the real World sandbox and Sepolia.
+> - **Per-gateway models and keys:** local = Airlock-hosted or your own OpenAI-compatible URL (public addresses only on the hosted server); frontier = Airlock-hosted (no key, 5 frontier requests per person per hour) or Anthropic / OpenAI-compatible with the gateway's own key, AES-256-GCM sealed at rest. Per-member API keys (`alk_…`) pick the gateway, the person and the agent; identity headers from clients are ignored.
+> - **Console:** a single HTML page: sign-in, a create-gateway wizard, a Get started checklist, the chamber view with hold-to-approve, the linked redaction view, the hash-chained ledger, and Manage (members and invites, a live people → agent → ENS policy diagram, models, API keys).
+> - **Tests:** 35 unit tests (OIDC against a mock IdP, sign-in, role checks, API keys, agent assignment, owner-signed ENS changes, rate limits), plus end-to-end runs against the real World sandbox and Sepolia, and browser runs of the Console with a scripted wallet.
 
 **Links:**
 - GitHub: https://github.com/cheng-chun-yuan/airlock
