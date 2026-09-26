@@ -166,6 +166,36 @@ airlock.eth                                   UserRegistry (own subregistry), no
 
 ---
 
+## ⛓️ Why MultiBaas (Curvegrid): on-chain changes take effect immediately
+
+**The problem.** Airlock's authority lives on-chain. Approver roles are ENS subnames; policies are ENS records. But a gateway only *reads* ENS when a request comes in, and it caches what it reads. Without an event feed:
+- **A revocation lags.** Unregistering a compromised approver's subname took effect only when a cache expired. For "remove this person's power to release confidential data", a lag is exactly the wrong behaviour.
+- **Nobody sees policy changes.** Who changed `airlock.models` or granted write access, and when, lived only in raw logs on a block explorer.
+- **Public RPCs are a poor event source.** Our first ENS view took 41–63 s against a rate-limited public Sepolia RPC. Polling logs for every contract would be worse.
+
+**What MultiBaas does here.**
+- It **indexes Airlock's ENSv2 contracts**: the PermissionedResolver plus the root, agents, policies and legal-approver registries (`npm run mb:setup` uploads the event ABIs, aliases and links them).
+- It **pushes every event to the gateway by webhook** (`POST /multibaas/webhook`, HMAC-verified with a freshness window). The gateway then:
+  1. drops its cached policies and ENS view, so the **next request already uses the new on-chain state**;
+  2. pushes a readable line to every open Console: *"carol.legal.approvers.airlock.eth unregistered (revoked)"*, *"legal.policies.airlock.eth: airlock.models = claude-*"*, *"gateway lost write access on airlock.models"*.
+- It **serves the change history** from its index (`GET /ens/changes`, shown as *On-chain activity* in the ENS tab). This gives compliance an audit trail of the **policy itself**, next to the hash-chained trail of requests.
+
+**Verified live on Sepolia.** Revoking and re-enrolling `carol` on-chain appeared in the Console within seconds of each block:
+- unregistered → approver cleared → registered → approver set;
+- each line links to its tx;
+- the gateway's policy and role caches are invalidated on each event.
+
+Without MultiBaas you'd need your own indexer, reorg handling and a webhook service. With it, Airlock is a thin HTTPS endpoint.
+
+**MultiBaas feedback** (as asked by the track):
+- **Bytecode is required even for ABI-only indexing.** Uploading a contract with just an ABI fails with a DB `NOT NULL` on `bytecode`. Sending `bin: "0x"` works. The UI and docs could accept ABI-only contracts, which is the common case when indexing someone else's deployed contracts.
+- **The free plan's `past_logs_max_depth` is 100 blocks**, so linking a contract can't backfill history older than about 20 minutes. It's fine for live events, but a small one-time backfill would help teams who deploy first and add indexing later.
+- **The docs mix `/api/v0` and `/api/v1`** (the API-keys page shows v1; the SDK and backend guide use v0).
+- **Webhooks can't be filtered** by contract or event, so every indexed event is delivered and filtering happens in the handler.
+- **The good parts:** event decoding with named inputs, aliases, and a clean HMAC scheme made the integration about 150 lines, with no indexer to run.
+
+**Team:** *(to fill: names and X/GitHub handles)*
+
 ## Run it
 
 ```bash
@@ -173,6 +203,7 @@ npm install
 npm start                                   # gateway + Console on :8787
 npm test                                    # 17 unit tests (redaction, policy, World ID, OIDC vs mock IdP, …)
 npm run ens -- check contract-agent.agents.airlock.eth
+npm run mb:setup                            # optional: index the ENS contracts in MultiBaas + webhook (MULTIBAAS_URL, MULTIBAAS_API_KEY, PUBLIC_URL)
 ```
 
 - **Zero config:** runs with a mock World ID and JSON policies.
@@ -197,7 +228,7 @@ gateway/        Hono server: router, pipeline (plan/execute, streaming), egress 
 packages/core/  types, interfaces, policy decision table
 redactor/       rules + dictionary + Presidio + local-LLM recognizers, stream rehydrator, local attack test
 approval/       approval queue/SSE, World ID 4.0 (IDKit) verifier, World ID for Agents (OIDC)
-registry/       ENSv2 resolvers/writer (viem), ens:setup (whole name tree), ens CLI
+registry/       ENSv2 resolvers/writer (viem), ens:setup / ens:eac / ens:policies, ens CLI, MultiBaas client + mb:setup
 audit/          hash-chained JSONL, Merkle root, ENS anchoring
 console/        single-page Console (chamber, hold-to-approve, linked redaction view, ledger, live ENS panel, enroll, try it)
 skills/airlock/ agent skill: how an agent should use Airlock
