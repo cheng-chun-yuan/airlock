@@ -41,10 +41,10 @@ The cut removes only idle waiting (the Sepolia transaction during Revoke, 1:32).
 
 The product changed after the cut above: you sign in with a wallet (no access token), anyone creates their own gateway, and admins assign each member an agent. Record these as new screen footage, then splice them in **after 05 Two humans, replacing 06 New agent**. Durations are estimates at the same relaxed pace; the timecodes above stay as-is until you re-cut.
 
-**[A · ~20 s · Sign in + create gateway]** → Sign in with wallet (signature, no gas) → *Create gateway* `acme-legal` → `acme-legal.airlock.eth` registered on Sepolia, owner = your wallet → Models: local endpoint + frontier key
-> Anyone can run their own Airlock. I sign in with my wallet, just a signature. I create acme-legal, and it's registered as acme-legal.airlock.eth on Sepolia, owned by my wallet. Then I plug in my own local and frontier models.
+**[A · 38 s (recorded) · Sign in + create gateway]** → Sign in with wallet (signature, no gas) → *Create gateway* `kestrel-legal` → `kestrel-legal.airlock.eth` registered on Sepolia, owner = your wallet → Models: local endpoint + frontier key
+> Anyone can run their own Airlock. I sign in with my wallet, just a signature. I create kestrel-legal, and it's registered as kestrel-legal.airlock.eth on Sepolia, owned by my wallet. Then I plug in my own local and frontier models.
 
-**[B · ~25 s · Invite + assign agent → blocked]** → Manage › Members: invite link, role *member* → intern's API key → Manage › Agents & policy: agent `intern-bot` → 🔗 `strict.policy.acme-legal.airlock.eth` (maxClass=internal), wallet signs one tx → Manage › Members: intern runs as `intern-bot` → intern sends *Contract review* → NOT SENT, "confidential exceeds intern-bot… maxClass=internal" → Audit row shows agent `intern-bot`
+**[B · 86 s (recorded; trim to fit) · Invite + assign agent → blocked]** → Manage › Members: invite link, role *member* → intern's API key → Manage › Agents & policy: agent `intern-bot` → 🔗 `strict.policy.kestrel-legal.airlock.eth` (maxClass=internal), wallet signs one tx → Manage › Members: intern runs as `intern-bot` → intern sends *Contract review* → NOT SENT, "confidential exceeds intern-bot… maxClass=internal" → Audit row shows agent `intern-bot`
 > I invite an intern with a one-time link, and they get their own API key. On ENS, I link the intern-bot agent to our strict policy: one transaction, signed by my wallet. Then I assign the intern to intern-bot. They send a confidential contract. Blocked, and the audit records which agent it ran as.
 
 **[C · optional · ~12 s · Owner-signed policy change]** → edit `strict` policy → wallet prompt → receipt checked → saved
