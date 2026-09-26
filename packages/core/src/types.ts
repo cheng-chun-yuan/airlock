@@ -82,6 +82,8 @@ export interface ApprovalRequest {
   /** Who asked (x-airlock-user) and why they need a frontier model (x-airlock-justification). */
   requester?: string;
   justification?: string;
+  /** Stable id of the requester (their address), set by the platform: lets them withdraw their own request. */
+  requesterId?: string;
   /** Distinct humans required, and the approvals counted so far. */
   quorum?: number;
   approvals?: { approverName?: string; commitment?: string; method?: string; at: number }[];

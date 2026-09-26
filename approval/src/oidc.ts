@@ -34,6 +34,8 @@ export interface OidcPending {
   nonce: string;
   verifier: string;
   createdAt: number;
+  /** Which gateway started it: one callback URL serves them all. */
+  tenant?: string;
 }
 
 export type OidcResult =
@@ -64,12 +66,12 @@ export class WorldOidc {
   }
 
   /** Build the authorize URL for one operation. */
-  async start(kind: OidcKind, ref: string, approverName: string, binding: string): Promise<string> {
+  async start(kind: OidcKind, ref: string, approverName: string, binding: string, tenant?: string): Promise<string> {
     const meta = await this.discover();
     const state = b64url(randomBytes(24));
     const verifier = b64url(randomBytes(32));
     const nonce = sha256(`airlock/oidc/v1|${kind}|${ref}|${binding}|${b64url(randomBytes(16))}`).toString("hex");
-    this.pending.set(state, { kind, ref, approverName, binding, nonce, verifier, createdAt: Date.now() });
+    this.pending.set(state, { kind, ref, approverName, binding, nonce, verifier, createdAt: Date.now(), tenant });
     for (const [s, p] of this.pending) if (Date.now() - p.createdAt > 15 * 60_000) this.pending.delete(s);
     const url = new URL(meta.authorization_endpoint);
     url.search = new URLSearchParams({
@@ -84,6 +86,11 @@ export class WorldOidc {
       max_age: String(this.cfg.maxAuthAgeS ?? 300),
     }).toString();
     return url.toString();
+  }
+
+  /** Look without consuming: which gateway should handle this callback. */
+  peek(state: string): OidcPending | undefined {
+    return this.pending.get(state);
   }
 
   /** The approver backed out at World (e.g. error=access_denied): drop the request and say which operation it was. */

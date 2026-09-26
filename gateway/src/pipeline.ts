@@ -68,6 +68,7 @@ export interface RequestOpts {
   /** Requesting employee (x-airlock-user) and their business justification (x-airlock-justification). */
   user?: string;
   justification?: string;
+  requesterId?: string;
 }
 
 /** What to do once all checks ran; executed either as one completion or as a stream. */
@@ -89,16 +90,18 @@ interface Grant {
   until: number;
 }
 
-const sessions = new Map<string, Session>();
-const sessionFor = (id: string) => sessions.get(id) ?? sessions.set(id, newSession(id)).get(id)!;
-const grants = new Map<string, Grant[]>();
-
 const UNSURE = /\b(?:I (?:don't|do not) know|I'm not sure|I am not sure|cannot answer|can't answer|unable to answer)\b|無法回答|不確定|不知道/i;
 const usageRec = (u?: Usage) => u && { promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens };
 const riskRank = (r: RiskLevel) => (r === "high" ? 1 : 0);
 
 export class Pipeline {
   constructor(private d: Deps) {}
+  // Per pipeline, so two gateways never share a placeholder table or an approval scope, even on the same session id.
+  private sessions = new Map<string, Session>();
+  private grants = new Map<string, Grant[]>();
+  private sessionFor(id: string) {
+    return this.sessions.get(id) ?? this.sessions.set(id, newSession(id)).get(id)!;
+  }
 
   private record(draft: Draft) {
     const r = this.d.audit.append(draft);
@@ -247,7 +250,7 @@ export class Pipeline {
     const agentId = opts.agent;
     const { d } = this;
     const requestId = randomUUID();
-    const session = sessionFor(sessionId);
+    const session = this.sessionFor(sessionId);
     const sourceHash = hashOf(messages);
 
     const red = await d.redactor.redact(messages, session);
@@ -282,7 +285,7 @@ export class Pipeline {
 
     // approval / owner — first see whether an earlier approval in this session already covers it
     const placeholders = Object.keys(red.mapping);
-    const candidate = (grants.get(sessionId) ?? []).find(
+    const candidate = (this.grants.get(sessionId) ?? []).find(
       (g) =>
         g.until > Date.now() &&
         g.agent === policy.agent &&
@@ -296,7 +299,7 @@ export class Pipeline {
     if (candidate) {
       const roleNow = await d.roles.isValidApprover(candidate.decision.approverCommitment ?? "", candidate.role, candidate.decision.approverName);
       if (roleNow === "valid") grant = candidate;
-      else grants.set(sessionId, (grants.get(sessionId) ?? []).filter((g) => g !== candidate));
+      else this.grants.set(sessionId, (this.grants.get(sessionId) ?? []).filter((g) => g !== candidate));
     }
     if (grant) {
       const reason = `within approved scope of ${grant.approvalId.slice(0, 8)} (no new entities, risk ≤ ${grant.risk})`;
@@ -337,6 +340,7 @@ export class Pipeline {
       findings: risk.findings,
       targetModel,
       requester: opts.user,
+      requesterId: opts.requesterId,
       justification: opts.justification,
       quorum: route.kind === "approval" ? route.quorum ?? 1 : 1,
       approvals: [],
@@ -353,8 +357,8 @@ export class Pipeline {
     if (Date.now() > req.expiresAt) return fallback("expired", "approval expired before egress", decision, viewHash);
 
     if (d.approvalScopeMs > 0)
-      grants.set(sessionId, [
-        ...(grants.get(sessionId) ?? []).filter((g) => g.until > Date.now()),
+      this.grants.set(sessionId, [
+        ...(this.grants.get(sessionId) ?? []).filter((g) => g.until > Date.now()),
         { approvalId: req.id, agent: policy.agent, targetModel, role: route.role, placeholders: new Set(placeholders), risk: risk.level, decision, until: Date.now() + d.approvalScopeMs },
       ]);
 

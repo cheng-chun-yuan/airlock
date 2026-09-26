@@ -12,6 +12,11 @@ import { JsonlAuditLog } from "@airlock/audit";
 import { ClaudeModel, LocalModel, OpenAICompatModel, type FrontierModel } from "./llm";
 import { Pipeline } from "./pipeline";
 import { buildApp } from "./app";
+import { SiweAuth } from "./platform/auth";
+import { buildPlatform } from "./platform/routes";
+import { PlatformStore, Vault, type Gateway } from "./platform/store";
+import { Tenants, type PlatformContext, type Tenant } from "./platform/tenants";
+import { EnsProvisioner } from "@airlock/registry";
 
 const env = process.env;
 const requireEnv = (k: string) => env[k] ?? (console.error(`${k} is required`), process.exit(1));
@@ -183,7 +188,28 @@ const pipeline = new Pipeline({
   approvalScopeMs: Number(env.APPROVAL_SCOPE_MS ?? 600_000),
 });
 
-const app = buildApp({
+const demoConfig = {
+  kind: "demo",
+  slug: "demo",
+  name: "Airlock demo",
+  worldIdMode: verifier.mode,
+  publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
+  org: orgRoot,
+  defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
+  worldIdAgents: !!oidc,
+  multibaas: !!mb,
+  binding: bindingMode,
+  ensMode,
+  defaultClaudeModel,
+  claudeModels: (env.EGRESS_MODELS ?? env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
+  egress: egress.configured ? egress.name : null,
+  localModel: local.model,
+  // Mock people for local dev only; their commitments are pre-enrolled in data/approvers.json.
+  mockApprovers: verifier.mode === "mock" ? [{ name: "alice.legal.approvers.acme.eth", nullifier: "0x0a11ce" }, { name: "mallory.legal.approvers.acme.eth", nullifier: "0x0bad" }] : [],
+  demoPrompt: `Review this contract and list the three riskiest clauses for us as Provider:\n\n${readFileSync(path("demo/contract.md"), "utf8")}`,
+};
+
+const demoApp = buildApp({
   pipeline,
   approvals,
   audit,
@@ -228,31 +254,87 @@ const app = buildApp({
   binding: bindingMode,
   localModel: local.model,
   claudeModels: (env.EGRESS_MODELS ?? env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
-  consoleHtml: readFileSync(path("console/index.html"), "utf8"),
   approveAction: env.WORLD_ACTION ?? "airlock-approve",
-  accessToken: env.AIRLOCK_ACCESS_TOKEN || undefined,
+  consolePath: "/console/demo",
   ensLink: env.SEPOLIA_RPC_URL ? () => `https://app.ens.dev/${auditName}` : undefined,
-  publicConfig: {
-    worldIdMode: verifier.mode,
-    publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
-    org: orgRoot,
-    defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
-    worldIdAgents: !!oidc,
-    multibaas: !!mb,
-    binding: bindingMode,
-    ensMode,
-    defaultClaudeModel,
-    egress: egress.configured ? egress.name : null,
-    // Mock people for local dev only; their commitments are pre-enrolled in data/approvers.json.
-    mockApprovers: verifier.mode === "mock" ? [{ name: "alice.legal.approvers.acme.eth", nullifier: "0x0a11ce" }, { name: "mallory.legal.approvers.acme.eth", nullifier: "0x0bad" }] : [],
-    demoPrompt: `Review this contract and list the three riskiest clauses for us as Provider:\n\n${readFileSync(path("demo/contract.md"), "utf8")}`,
-  },
+  publicConfig: demoConfig,
 });
+
+// ---------- the platform: sign-in, self-serve gateways, members, invites, API keys ----------
+const gatewaySecret = env.GATEWAY_SECRET ?? "dev-secret-change-me";
+if (!env.GATEWAY_SECRET && env.PUBLIC_URL) console.warn("GATEWAY_SECRET is not set: sessions, stored model keys and audit signatures use a dev secret");
+const store = new PlatformStore(path(env.PLATFORM_FILE ?? "data/platform.json"));
+const vault = new Vault(env.VAULT_KEY ?? gatewaySecret);
+// The showcase gateway is configured from env like before; it has a store record so members can hold keys for it.
+let demoGw = store.all().find((g) => g.kind === "demo");
+if (!demoGw)
+  demoGw = store.add({
+    slug: "demo",
+    name: "Airlock demo",
+    kind: "demo",
+    owner: "0x0000000000000000000000000000000000000000",
+    local: { mode: "shared" },
+    frontier: { provider: "anthropic", models: demoConfig.claudeModels, defaultModel: defaultClaudeModel },
+    policy: { maxClass: "confidential", egress: "approval", highRiskQuorum: 2 },
+    ens: { status: "live", state: { done: {} } },
+  });
+const demo: Tenant = { gw: demoGw, app: demoApp, approvals, audit, roles, local, egress, config: demoConfig };
+
+// User gateways need ENS on Sepolia with a key that may register under the platform root.
+const deploy: Record<string, string> = (() => { try { return JSON.parse(readFileSync(path("data/ens-deploy.json"), "utf8")); } catch { return {}; } })();
+const rootRegistry = (env.ENS_ROOT_REGISTRY ?? deploy["registry:root"]) as Hex | undefined;
+const platformKey = env.PLATFORM_PRIVATE_KEY ?? env.ENS_PRIVATE_KEY;
+const sharedLocal = env.SHARED_LOCAL === "0" ? undefined : local;
+let ctx: PlatformContext | undefined, provisioner: EnsProvisioner | undefined;
+if (ensRead && env.SEPOLIA_RPC_URL && platformKey && rootRegistry) {
+  provisioner = new EnsProvisioner(ensRead, env.SEPOLIA_RPC_URL, platformKey as Hex, rootRegistry);
+  ctx = {
+    root: orgRoot,
+    rpcUrl: env.SEPOLIA_RPC_URL,
+    client: ensRead,
+    policies: policies instanceof EnsPolicyResolver ? policies : new EnsPolicyResolver(ensRead),
+    platformKey: platformKey as Hex,
+    platformAddress: provisioner.address,
+    verifier,
+    oidc,
+    binding: bindingMode,
+    approveAction: env.WORLD_ACTION ?? "airlock-approve",
+    vault,
+    dataDir: env.DATA_DIR ? resolve(env.DATA_DIR) : path("data"),
+    gatewaySecret,
+    commitmentSalt: env.COMMITMENT_SALT ?? "airlock-dev-salt",
+    publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
+    sharedLocal,
+    presidioUrl: env.PRESIDIO_URL,
+    redactLlm: env.REDACT_LLM === "1",
+    attackTest: env.ATTACK_TEST !== "0",
+    approvalTimeoutMs,
+    approvalScopeMs: Number(env.APPROVAL_SCOPE_MS ?? 600_000),
+  };
+} else console.warn("[platform] self-serve gateways are off: they need SEPOLIA_RPC_URL, ENS_PRIVATE_KEY and the root registry (data/ens-deploy.json or ENS_ROOT_REGISTRY)");
+
+const tenants = new Tenants(ctx, demo);
+const app = buildPlatform({
+  store,
+  auth: new SiweAuth(env.SESSION_SECRET ?? gatewaySecret, ensRead),
+  tenants,
+  vault,
+  root: orgRoot,
+  provisioner,
+  allowPrivateUpstreams: env.ALLOW_PRIVATE_UPSTREAMS === "1",
+  maxGatewaysPerUser: Number(env.MAX_GATEWAYS_PER_USER ?? 3),
+  sharedLocal: sharedLocal && { model: sharedLocal.model },
+  consoleHtml: () => (process.env.NODE_ENV === "production" ? consoleHtml : readFileSync(path("console/index.html"), "utf8")),
+  publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
+  oidcTenant: oidc && ((state) => oidc.peek(state)?.tenant),
+  policyChanged: () => ctx?.policies.invalidate(),
+});
+const consoleHtml = readFileSync(path("console/index.html"), "utf8");
 
 if (env.AUDIT_ANCHOR_INTERVAL_MS && writer)
   setInterval(() => audit.anchor().then((a) => console.log(`[audit] anchored ${a.root} tx=${a.tx}`)).catch((e) => console.warn(`[audit] anchor failed: ${e.message}`)), Number(env.AUDIT_ANCHOR_INTERVAL_MS));
 
 serve({ fetch: app.fetch, port, hostname: env.HOST ?? "0.0.0.0" }, () => {
   console.log(`airlock gateway on :${port}  local=${local.model}  egress=${egress.configured ? `${egress.name} → ${defaultClaudeModel}` : "NOT CONFIGURED"}  worldid=${verifier.mode}  ens=${ensMode}`);
-  console.log(`console → http://localhost:${port}/console`);
+  console.log(`console → http://localhost:${port}/console  gateways=${provisioner ? `self-serve under ${orgRoot}` : "demo only"}`);
 });

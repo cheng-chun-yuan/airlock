@@ -53,6 +53,7 @@ async function* sse(res: Response): AsyncGenerator<{ event?: string; data: strin
 async function* openaiStream(url: string, headers: Record<string, string>, body: Record<string, unknown>, signal?: AbortSignal): AsyncGenerator<Chunk> {
   const res = await fetch(url, {
     signal,
+    redirect: "error",
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify({ ...body, stream: true, stream_options: { include_usage: true } }),
@@ -74,7 +75,20 @@ export class LocalModel {
     private baseUrl: string,
     public model: string,
     private disableThinking = true,
+    /** For endpoints behind auth (a tunnelled Ollama / vLLM with --api-key). */
+    private apiKey?: string,
   ) {}
+
+  private get headers(): Record<string, string> {
+    return this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {};
+  }
+
+  /** Reachability check: lists the endpoint's models. */
+  async ping(): Promise<string> {
+    const res = await fetch(`${this.baseUrl}/models`, { headers: this.headers, redirect: "error", signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return this.model;
+  }
 
   private body(messages: ChatMessage[], extra: Record<string, unknown>) {
     return {
@@ -89,7 +103,8 @@ export class LocalModel {
   async complete(messages: ChatMessage[], extra: Record<string, unknown> = {}): Promise<Completion> {
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      redirect: "error",
+      headers: { "content-type": "application/json", ...this.headers },
       body: JSON.stringify({ ...this.body(messages, extra), stream: false }),
     });
     if (!res.ok) throw new Error(`local model ${res.status}: ${await res.text()}`);
@@ -104,7 +119,7 @@ export class LocalModel {
   }
 
   stream(messages: ChatMessage[], extra: Record<string, unknown> = {}, signal?: AbortSignal): AsyncGenerator<Chunk> {
-    return openaiStream(`${this.baseUrl}/chat/completions`, {}, this.body(messages, extra), signal);
+    return openaiStream(`${this.baseUrl}/chat/completions`, this.headers, this.body(messages, extra), signal);
   }
 
   /** Plain question → text, for the local helpers (attack test, identifier tagging). */
@@ -127,6 +142,8 @@ export interface FrontierModel {
   complete(model: string, messages: ChatMessage[]): Promise<Completion>;
   /** `signal` aborts the upstream request (client hung up). */
   stream(model: string, messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<Chunk>;
+  /** Reachability + key check without spending tokens (lists models). */
+  ping(): Promise<string>;
 }
 
 const ANTHROPIC = "https://api.anthropic.com";
@@ -169,6 +186,7 @@ export class ClaudeModel implements FrontierModel {
       }));
     return fetch(`${this.baseUrl}/v1/messages`, {
       signal,
+      redirect: "error",
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -178,6 +196,17 @@ export class ClaudeModel implements FrontierModel {
       },
       body: JSON.stringify({ model, max_tokens: this.maxTokens, ...(system && { system }), messages: turns, stream }),
     });
+  }
+
+  async ping(): Promise<string> {
+    if (!this.apiKey) throw new Error("no API key");
+    const res = await fetch(`${this.baseUrl}/v1/models`, {
+      redirect: "error",
+      signal: AbortSignal.timeout(8000),
+      headers: { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01", ...(this.baseUrl !== ANTHROPIC && { authorization: `Bearer ${this.apiKey}` }) },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 401 ? " (key rejected)" : ""}`);
+    return this.name;
   }
 
   async complete(model: string, messages: ChatMessage[]): Promise<Completion> {
@@ -231,10 +260,18 @@ export class OpenAICompatModel implements FrontierModel {
     return !!this.apiKey;
   }
 
+  async ping(): Promise<string> {
+    if (!this.apiKey) throw new Error("no API key");
+    const res = await fetch(`${this.baseUrl}/models`, { redirect: "error", signal: AbortSignal.timeout(8000), headers: { authorization: `Bearer ${this.apiKey}` } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}${res.status === 401 ? " (key rejected)" : ""}`);
+    return this.name;
+  }
+
   async complete(model: string, messages: ChatMessage[]): Promise<Completion> {
     if (!this.apiKey) throw new Error("egress API key not set");
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
+      redirect: "error",
       headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
       body: JSON.stringify({ model, messages, stream: false }),
     });

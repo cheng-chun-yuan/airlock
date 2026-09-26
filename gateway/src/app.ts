@@ -1,8 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { getCookie, setCookie } from "hono/cookie";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { ApprovalRequest, ChatMessage, Decision, RoleCheck, RoleRegistry } from "@airlock/core";
@@ -18,7 +13,7 @@ export interface AppDeps {
   roles: RoleRegistry;
   verifier: ProofVerifier;
   /** World ID for Agents (Human Continuity OIDC); optional second way to approve/enroll. */
-  oidc?: WorldOidc;
+  oidc?: Pick<WorldOidc, "start" | "cancel" | "finish">;
   /**
    * How an approver is tied to their ENS role. "commitment": the World identity must match the one enrolled
    * on ENS (production). "name": the claimed approver subname must be live (staging / sandbox test identities).
@@ -26,13 +21,14 @@ export interface AppDeps {
   binding?: "commitment" | "name";
   localModel: string;
   claudeModels: string[];
-  consoleHtml: string;
   publicConfig: Record<string, unknown>;
+  /** Where World ID pages send people back to (this gateway's Console). */
+  consolePath?: string;
+  /** commitment(nullifier) as stored on ENS; salted per gateway so one person isn't linkable across gateways. */
+  commitment?: (nullifier: string) => string;
   /** One fixed World ID action for enroll + approve, so the (legacy) nullifier is stable per person. */
   approveAction: string;
   ensLink?: (root: string) => string;
-  /** When set, every route except health / static IDKit / OIDC callback needs this token. */
-  accessToken?: string;
   /** MultiBaas: verified webhook deliveries of ENS events, and the indexed change history. */
   chain?: { secret?: string; onEvents(raw: unknown): Promise<number>; recent(): Promise<unknown[]>; verify(raw: string, sig?: string, ts?: string): boolean };
   /** Health of each integration, for the Overview page. */
@@ -60,8 +56,14 @@ export type GrantOutcome =
   | { status: "approved" | "partial"; have: number; need: number; roleCheck: RoleCheck }
   | { status: "role_invalid" | "same-human" | "same-name" | "not-pending"; have: number; need: number; roleCheck?: RoleCheck; reason: string };
 
+/**
+ * One gateway's API: the OpenAI-compatible endpoint, approvals, audit, ENS and enrollment. Who may call which
+ * route is decided in front of it, by the platform (platform/routes.ts), which also sets the caller's identity.
+ */
 export function buildApp(d: AppDeps) {
   const app = new Hono();
+  const consolePath = d.consolePath ?? "/console";
+  const commit = d.commitment ?? commitmentOf;
 
   /**
    * A verified human claims an approver name. Check the ENS role, then count them toward the request's quorum:
@@ -93,30 +95,6 @@ export function buildApp(d: AppDeps) {
     return { status: c.result, have: c.have, need: c.need, roleCheck, reason };
   }
 
-  // Access gate for public deployments (e.g. behind a tunnel). Clients send `Authorization: Bearer <token>`;
-  // browsers open /console?token=<token> once, which sets an HttpOnly cookie and strips the token from the URL.
-  if (d.accessToken) {
-    const want = Buffer.from(d.accessToken);
-    const ok = (v?: string | null) => !!v && v.length === d.accessToken!.length && timingSafeEqual(Buffer.from(v), want);
-    const open = (p: string) => p === "/health" || p === "/oidc/callback" || p === "/multibaas/webhook" || p.startsWith("/vendor/");
-    app.use("*", async (c, next) => {
-      const url = new URL(c.req.url);
-      if (open(url.pathname)) return next();
-      const q = url.searchParams.get("token");
-      if (ok(q)) {
-        const secure = c.req.header("x-forwarded-proto") === "https" || url.protocol === "https:";
-        setCookie(c, "airlock_token", q!, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 7 * 86400 });
-        url.searchParams.delete("token");
-        return c.redirect(url.pathname + (url.search || ""));
-      }
-      const bearer = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
-      if (ok(bearer) || ok(getCookie(c, "airlock_token"))) return next();
-      if (c.req.method === "GET" && (url.pathname === "/" || url.pathname === "/console"))
-        return c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airlock</title><body style="font:15px/1.6 system-ui;max-width:420px;margin:18vh auto;padding:0 16px"><p style="font:500 11px ui-monospace,monospace;letter-spacing:.2em">AIRLOCK</p><h2 style="margin:.2em 0 12px">This console is locked</h2><form method="get" action="/console"><input name="token" type="password" placeholder="access token" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font:14px ui-monospace,monospace"><button style="margin-top:10px;padding:9px 18px;border:0;border-radius:99px;background:#141414;color:#fff;font:600 14px system-ui">Enter</button></form></body>`, 401);
-      return c.json({ error: { message: "missing or invalid Airlock access token", type: "authentication_error" } }, 401);
-    });
-  }
-
   // ---------- Gateway (clients) ----------
   app.get("/v1/models", (c) =>
     c.json({
@@ -140,6 +118,7 @@ export function buildApp(d: AppDeps) {
       sessionId: c.req.header("x-airlock-session") ?? undefined,
       agent: c.req.header("x-airlock-agent") ?? undefined,
       user: text("x-airlock-user"),
+      requesterId: c.req.header("x-airlock-requester-id") ?? undefined,
       justification: text("x-airlock-justification"),
       extra,
     };
@@ -218,7 +197,7 @@ export function buildApp(d: AppDeps) {
       const method = d.verifier.mode === "mock" ? ("mock" as const) : ("idkit" as const);
       if (!v.ok) decision = { status: "proof_invalid", method, reason: `World ID proof rejected: ${v.error}`, worldIdVerified: false };
       else {
-        const g = await grant(req, { approverName: body.approverName, commitment: commitmentOf(v.nullifier!), method });
+        const g = await grant(req, { approverName: body.approverName, commitment: commit(v.nullifier!), method });
         return c.json(g, g.status === "approved" || g.status === "partial" ? 200 : 403);
       }
     }
@@ -315,7 +294,7 @@ export function buildApp(d: AppDeps) {
     if (!body.approverName) return c.json({ error: "approverName required" }, 400);
     const v = await d.verifier.verify(body, enrollSignal(body.approverName), d.approveAction);
     if (!v.ok) return c.json({ error: `World ID proof rejected: ${v.error}` }, 403);
-    const commitment = commitmentOf(v.nullifier!);
+    const commitment = commit(v.nullifier!);
     if (!d.roles.enroll) return c.json({ error: "role registry is read-only" }, 501);
     await d.roles.enroll(body.approverName, commitment);
     return c.json({ approverName: body.approverName, commitment });
@@ -341,7 +320,7 @@ export function buildApp(d: AppDeps) {
     if (!d.oidc) return c.json({ error: "World ID for Agents (OIDC) not configured" }, 501);
     const req = d.approvals.get(c.req.param("id"));
     if (!req) return c.json({ error: "not found" }, 404);
-    if (req.status !== "pending") return c.redirect(`/console#${req.id}`);
+    if (req.status !== "pending") return c.redirect(`${consolePath}#${req.id}`);
     // The OIDC nonce commits to this approval + payloadHash; see approval/src/oidc.ts.
     return c.redirect(await d.oidc.start("approve", req.id, c.req.query("approverName") ?? "", req.payloadHash));
   });
@@ -360,18 +339,18 @@ export function buildApp(d: AppDeps) {
       // Cancelled / refused at World: the protected action must not happen.
       const p = d.oidc.cancel(state);
       if (p?.kind === "approve") d.approvals.resolve(p.ref, { status: "denied", method: "oidc", reason: `approver cancelled World ID (${error})`, worldIdVerified: false });
-      return c.html(page("Not approved", `World ID returned <b>${esc(error)}</b>${error_description ? ` — ${esc(error_description)}` : ""}. Nothing was sent.`, p?.kind === "approve" ? `/console#${p.ref}` : "/console#enroll"));
+      return c.html(page("Not approved", `World ID returned <b>${esc(error)}</b>${error_description ? ` — ${esc(error_description)}` : ""}. Nothing was sent.`, p?.kind === "approve" ? `${consolePath}#${p.ref}` : `${consolePath}#enroll`));
     }
     const r = await d.oidc.finish(state, code);
     if (!r.ok) {
       if (r.pending?.kind === "approve") d.approvals.resolve(r.pending.ref, { status: "proof_invalid", method: "oidc", reason: `World ID for Agents: ${r.error}`, worldIdVerified: false });
-      return c.html(page("Verification failed", esc(r.error), r.pending?.kind === "approve" ? `/console#${r.pending.ref}` : "/console#enroll"), 403);
+      return c.html(page("Verification failed", esc(r.error), r.pending?.kind === "approve" ? `${consolePath}#${r.pending.ref}` : `${consolePath}#enroll`), 403);
     }
-    const commitment = commitmentOf(r.nullifier);
+    const commitment = commit(r.nullifier);
     if (r.pending.kind === "enroll") {
       if (!d.roles.enroll) return c.html(page("Read-only registry", "This gateway can't write approver records."), 501);
       await d.roles.enroll(r.pending.approverName, commitment);
-      return c.html(page("Enrolled", `<b>${esc(r.pending.approverName)}</b> is now bound to this World ID.<br><code style="font-size:12px">commitment ${commitment}</code>`, "/console#enroll"));
+      return c.html(page("Enrolled", `<b>${esc(r.pending.approverName)}</b> is now bound to this World ID.<br><code style="font-size:12px">commitment ${commitment}</code>`, `${consolePath}#enroll`));
     }
     const req = d.approvals.get(r.pending.ref);
     if (!req || req.status !== "pending") return c.html(page("Too late", "This request is no longer waiting for approval."), 409);
@@ -379,27 +358,14 @@ export function buildApp(d: AppDeps) {
     const who = `<b>${esc(r.pending.approverName)}</b>`;
     return c.html(
       g.status === "approved"
-        ? page("Approved", `Verified human · ${who} holds a live ${esc(req.requiredRole)} role.${g.need > 1 ? ` ${g.need} different humans approved.` : ""} The outer door opens.`, `/console#${req.id}`)
+        ? page("Approved", `Verified human · ${who} holds a live ${esc(req.requiredRole)} role.${g.need > 1 ? ` ${g.need} different humans approved.` : ""} The outer door opens.`, `${consolePath}#${req.id}`)
         : g.status === "partial"
-          ? page(`Counted: ${g.have} of ${g.need}`, `Verified human · ${who} approved. A second, <b>different</b> human must approve before anything leaves.`, `/console#${req.id}`)
-          : page(g.status === "role_invalid" ? "Role check failed" : "Not counted", esc("reason" in g ? g.reason : ""), `/console#${req.id}`),
+          ? page(`Counted: ${g.have} of ${g.need}`, `Verified human · ${who} approved. A second, <b>different</b> human must approve before anything leaves.`, `${consolePath}#${req.id}`)
+          : page(g.status === "role_invalid" ? "Role check failed" : "Not counted", esc("reason" in g ? g.reason : ""), `${consolePath}#${req.id}`),
     );
   });
 
-  // ---------- Console ----------
   app.get("/config", (c) => c.json(d.publicConfig));
-  app.get("/", (c) => c.redirect("/console"));
-  app.get("/console", (c) => c.html(process.env.NODE_ENV === "production" ? d.consoleHtml : readFileSync(new URL("../../console/index.html", import.meta.url), "utf8")));
-  app.get("/health", (c) => c.json({ ok: true }));
-
-  // IDKit browser bundle + its WASM, served from node_modules (the CDN build fails WASM init; see docs/SETUP.md).
-  const idkitDir = dirname(createRequire(import.meta.url).resolve("@worldcoin/idkit-core/hashing"));
-  const vendor = { "idkit.global.js": "text/javascript", "idkit_wasm_bg.wasm": "application/wasm" } as Record<string, string>;
-  app.get("/vendor/idkit/:file", (c) => {
-    const type = vendor[c.req.param("file")];
-    if (!type) return c.notFound();
-    return c.body(readFileSync(join(idkitDir, c.req.param("file"))), 200, { "content-type": type, "cache-control": "public, max-age=3600" });
-  });
 
   return app;
 }

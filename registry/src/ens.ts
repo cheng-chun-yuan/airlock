@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, keccak256, namehash, parseAbi, toBytes, toHex, zeroAddress, type Hex, type PublicClient } from "viem";
+import { createPublicClient, createWalletClient, fallback, http, keccak256, namehash, parseAbi, toBytes, toHex, zeroAddress, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import { normalize, packetToBytes } from "viem/ens";
@@ -10,10 +10,23 @@ import type { DataClass, Policy, PolicyResolver, RoleCheck, RoleRegistry } from 
  * entry proxy that forwards to UniversalResolverV2, so plain getEnsText works.
  * Other v2 addresses move on each testnet redeploy — keep them in env, not code.
  */
+/**
+ * The configured RPC first, then public Sepolia endpoints (SEPOLIA_RPC_FALLBACKS, comma-separated). A keyed RPC
+ * shared by several gateways gets rate-limited, and a multi-step write (provisioning, a policy change) must ride
+ * through that rather than fail halfway.
+ */
+export function sepoliaTransport(rpcUrl: string) {
+  const extra = (process.env.SEPOLIA_RPC_FALLBACKS ?? "https://ethereum-sepolia-rpc.publicnode.com,https://sepolia.drpc.org")
+    .split(",")
+    .map((u) => u.trim())
+    .filter((u) => u && u !== rpcUrl);
+  return fallback([rpcUrl, ...extra].map((u) => http(u, { retryCount: 2, retryDelay: 600 })));
+}
+
 export function ensClient(rpcUrl: string, universalResolverAddress?: Hex): PublicClient {
   return createPublicClient({
     chain: universalResolverAddress ? { ...sepolia, contracts: { ...sepolia.contracts, ensUniversalResolver: { address: universalResolverAddress } } } : sepolia,
-    transport: http(rpcUrl),
+    transport: sepoliaTransport(rpcUrl),
   }) as PublicClient;
 }
 
@@ -103,6 +116,18 @@ export class EnsRoleRegistry implements RoleRegistry {
   }
 }
 
+/**
+ * One transaction at a time per sending account. Several gateways share the platform key, and viem reads the
+ * nonce per send: two concurrent sends from one account would pick the same nonce and one would be dropped.
+ */
+const queues = new Map<string, Promise<unknown>>();
+export function txLock<T>(account: string, fn: () => Promise<T>): Promise<T> {
+  const key = account.toLowerCase();
+  const run = (queues.get(key) ?? Promise.resolve()).catch(() => {}).then(fn);
+  queues.set(key, run);
+  return run;
+}
+
 const resolverAbi = parseAbi(["function setText(bytes name, string key, string value)"]);
 const registryAbi = parseAbi([
   "function register(string label, address owner, address registry, address resolver, uint256 roleBitmap, uint64 expiry) returns (uint256)",
@@ -128,27 +153,31 @@ export class EnsWriter {
     /** UserRegistry that holds <approver>.legal.approvers.<org>.eth (from `npm run ens:setup`). */
     private approverRegistry?: Hex,
   ) {
-    this.wallet = createWalletClient({ account: privateKeyToAccount(privateKey), chain: sepolia, transport: http(rpcUrl) });
+    this.wallet = createWalletClient({ account: privateKeyToAccount(privateKey), chain: sepolia, transport: sepoliaTransport(rpcUrl) });
   }
 
   async setText(name: string, key: string, value: string): Promise<Hex> {
-    const hash = await this.wallet.writeContract({
-      address: this.resolver,
-      abi: resolverAbi,
-      functionName: "setText",
-      args: [toHex(packetToBytes(normalize(name))), key, value],
+    return txLock(this.wallet.account.address, async () => {
+      const hash = await this.wallet.writeContract({
+        address: this.resolver,
+        abi: resolverAbi,
+        functionName: "setText",
+        args: [toHex(packetToBytes(normalize(name))), key, value],
+      });
+      await this.client.waitForTransactionReceipt({ hash });
+      return hash;
     });
-    await this.client.waitForTransactionReceipt({ hash });
-    return hash;
   }
 
   private async write(fn: "register" | "unregister", args: readonly unknown[]): Promise<Hex> {
     if (!this.approverRegistry) throw new Error("ENS_APPROVER_REGISTRY not set");
-    const { request } = await this.client.simulateContract({ account: this.wallet.account, address: this.approverRegistry, abi: registryAbi, functionName: fn, args } as any);
-    const hash = await this.wallet.writeContract(request as any);
-    const rcpt = await this.client.waitForTransactionReceipt({ hash });
-    if (rcpt.status !== "success") throw new Error(`${fn} reverted (${hash})`);
-    return hash;
+    return txLock(this.wallet.account.address, async () => {
+      const { request } = await this.client.simulateContract({ account: this.wallet.account, address: this.approverRegistry!, abi: registryAbi, functionName: fn, args } as any);
+      const hash = await this.wallet.writeContract(request as any);
+      const rcpt = await this.client.waitForTransactionReceipt({ hash });
+      if (rcpt.status !== "success") throw new Error(`${fn} reverted (${hash})`);
+      return hash;
+    });
   }
 
   /** Register `label` in the approver registry with our resolver, unless it's already live. */
