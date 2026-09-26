@@ -44,6 +44,8 @@ Anyone can run their own airlock, with their own models and people:
 
 Removing a member deletes their keys and revokes their approver name on ENS.
 
+**Agents: what each person may send out, decided on ENS.** Admins create agents (`intern-bot.agents.acme-legal.airlock.eth`) and assign one to each member. Everything that member sends, from any of their keys or the Playground, runs under that agent's policy; they can't pick another. An agent follows the gateway policy by default (ENS wildcard: no transaction), or is linked to a named policy such as `strict.policy.acme-legal.airlock.eth` with ENSv2 `linkToNode`, signed by the owner's wallet. Edit `strict` once and every agent linked to it, and every person assigned to those agents, follows on their next request. Admins can also make service keys that run as a specific agent (bots, CI).
+
 **What the platform can and can't do.** After setup the platform hands the gateway over: its key keeps only `airlock.approver` (to enroll approvers) and `airlock.auditRoot` (to anchor the audit log). It **can't change your policy**: a policy change is a transaction your wallet signs, and the gateway checks the receipt before saving. One power remains, by the nature of subnames: the platform controls `airlock.eth`, so it could point `<slug>.airlock.eth` elsewhere (take the name back). It can't rewrite your policy under it.
 
 ## 🧑‍⚖️ For judges: the 3-minute tour

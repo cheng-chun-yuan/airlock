@@ -73,11 +73,21 @@ export function durableFor(p: PlatformContext, gw: Gateway): Durable {
 
 export function buildUserTenant(p: PlatformContext, gw: Gateway, durable: Durable): Tenant {
   const names = gatewayNames(gw.slug, p.root);
+  // A key that no longer opens (the vault key changed) reads as "not set": the gateway keeps working, and its
+  // status says the upstream needs a key again, instead of every request failing.
+  const open = (s: Parameters<Vault["open"]>[0], what: string) => {
+    try {
+      return p.vault.open(s);
+    } catch {
+      console.warn(`[${gw.slug}] stored ${what} key can't be decrypted (was VAULT_KEY/GATEWAY_SECRET changed?); treating it as unset`);
+      return undefined;
+    }
+  };
   const local =
     gw.local.mode === "custom" && gw.local.baseUrl && gw.local.model
-      ? new LocalModel(gw.local.baseUrl, gw.local.model, true, p.vault.open(gw.local.apiKey))
+      ? new LocalModel(gw.local.baseUrl, gw.local.model, true, open(gw.local.apiKey, "local model"))
       : p.sharedLocal ?? new LocalModel("http://127.0.0.1:9/v1", "none"); // no local model: requests fail loudly, nothing leaves
-  const key = p.vault.open(gw.frontier.apiKey);
+  const key = open(gw.frontier.apiKey, "frontier");
   const egress: FrontierModel =
     gw.frontier.provider === "openai" ? new OpenAICompatModel(key, gw.frontier.baseUrl ?? "https://api.openai.com/v1") : new ClaudeModel(key, gw.frontier.baseUrl ?? "https://api.anthropic.com");
 
@@ -112,8 +122,9 @@ export function buildUserTenant(p: PlatformContext, gw: Gateway, durable: Durabl
         agent: names.policy,
         auditName: names.audit,
         approverRegistry: st.approverRegistry,
-        agents: [names.policy, ...(gw.agents ?? []).map((a) => names.agent(a.label))],
-        policies: (gw.policies ?? []).map((p) => names.namedPolicy(p.label)),
+        // Getters: read when the Policy page asks, so new agents show without rebuilding the tenant.
+        get agents() { return [names.policy, ...(gw.agents ?? []).map((a) => names.agent(a.label))]; },
+        get policies() { return (gw.policies ?? []).map((p) => names.namedPolicy(p.label)); },
         accounts: [
           { label: "owner", address: gw.owner as Hex },
           { label: "gateway", address: p.platformAddress as Hex },
@@ -129,8 +140,6 @@ export function buildUserTenant(p: PlatformContext, gw: Gateway, durable: Durabl
     name: gw.name,
     org: names.base,
     defaultAgent: names.policy,
-    /** This gateway's agents: the Console's Playground may run as any of them. */
-    agents: (gw.agents ?? []).map((a) => ({ label: a.label, name: names.agent(a.label), policy: a.policy ? names.namedPolicy(a.policy) : null })),
     approverRole: names.approverRole,
     auditName: names.audit,
     worldIdMode: p.verifier.mode,
@@ -213,7 +222,7 @@ export class Tenants {
     if (gw.kind === "demo" && this.demo) return this.demo;
     if (!this.p) throw new Error("self-serve gateways are not configured on this server");
     // Settings that change the pipeline (models, keys, ENS contracts, ENS readiness) make a new tenant.
-    const version = JSON.stringify([gw.local, gw.frontier, gw.ens.state.resolver, gw.ens.state.approverRegistry, gw.ens.status, gw.agents, gw.policies]);
+    const version = JSON.stringify([gw.local, gw.frontier, gw.ens.state.resolver, gw.ens.state.approverRegistry, gw.ens.status]);
     const hit = this.cache.get(gw.id);
     if (hit && hit.version === version) return hit.t;
     const durable = this.durable.get(gw.id) ?? this.durable.set(gw.id, durableFor(this.p!, gw)).get(gw.id)!;

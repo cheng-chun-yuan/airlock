@@ -20,6 +20,11 @@ export interface Member {
   label: string;
   role: Role;
   joinedAt: number;
+  /**
+   * The agent this member runs as (a label in Gateway.agents; unset = the gateway default policy). Set by admins
+   * only: every request the member makes, from any of their keys or the Console, uses its ENS policy.
+   */
+  agent?: string;
 }
 
 export interface Invite {
@@ -44,7 +49,7 @@ export interface ApiKey {
   prefix: string;
   name: string;
   member: string;
-  /** The agent this key runs as (a label in Gateway.agents); unset = the gateway's default policy. */
+  /** Service keys only (made by an admin): the agent this key runs as. Unset = the member's assigned agent. */
   agent?: string;
   createdAt: number;
   lastUsedAt?: number;

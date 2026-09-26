@@ -453,6 +453,7 @@ export function buildPlatform(d: PlatformDeps) {
         approverName: canApprove(m.role) ? n.approver(m.label) : undefined,
         enrolled: canApprove(m.role) && g.ens.status === "live" && t.roles.isLiveApprover ? (await t.roles.isLiveApprover(n.approverRole, n.approver(m.label)).catch(() => "unknown")) === "valid" : false,
         keys: g.keys.filter((k) => k.member === m.address).length,
+        agent: m.agent ?? null,
       })),
     );
     return c.json(list);
@@ -464,7 +465,18 @@ export function buildPlatform(d: PlatformDeps) {
     const { g } = a;
     const target = g.members.find((m) => m.address === c.req.param("address").toLowerCase());
     if (!target) return json(c, 404, "not a member");
-    const { role } = (await c.req.json().catch(() => ({}))) as { role?: Role };
+    const body = (await c.req.json().catch(() => ({}))) as { role?: Role; agent?: string | null };
+    // The agent a member runs as: their ENS policy for every request. Only admins assign it.
+    if ("agent" in body) {
+      const agent = body.agent || undefined;
+      if (agent && !(g.agents ?? []).some((x) => x.label === agent)) return json(c, 400, `no agent "${agent}" in this gateway`);
+      target.agent = agent;
+      if (!body.role) {
+        store.save();
+        return c.json({ ok: true });
+      }
+    }
+    const role = body.role;
     if (!role || !ROLES.includes(role)) return json(c, 400, "role must be admin, approver or member");
     if (target.address === g.owner && role !== "admin") return json(c, 403, "the owner stays an admin");
     const wasApprover = canApprove(target.role);
@@ -632,6 +644,8 @@ export function buildPlatform(d: PlatformDeps) {
     if (!prev && (g.policies ?? []).length >= 20) return json(c, 403, "20 policies per gateway");
     const policy = readPolicy(body.policy, prev?.policy);
     if ("error" in policy) return json(c, 400, policy.error);
+    // Same as what's on-chain already: nothing for the owner to sign.
+    if (prev && JSON.stringify(policyRecords(g, d.root, prev.policy)) === JSON.stringify(policyRecords(g, d.root, policy))) return c.json({ ok: true, ...agentsView(g) });
     const w = await writeRecords(c, g, a.address, [{ name: gatewayNames(g.slug, d.root).namedPolicy(label), records: policyRecords(g, d.root, policy) }], txsOf(body));
     if (w instanceof Response) return w;
     if (prev) prev.policy = policy;
@@ -696,6 +710,8 @@ export function buildPlatform(d: PlatformDeps) {
     if (a instanceof Response) return a;
     const { g } = a;
     const label = c.req.param("label");
+    const assigned = g.members.filter((m) => m.agent === label).map((m) => m.label);
+    if (assigned.length) return json(c, 409, `${assigned.join(", ")} ${assigned.length === 1 ? "runs" : "run"} as this agent; assign ${assigned.length === 1 ? "them" : "each"} another first`);
     const keys = g.keys.filter((k) => k.agent === label).length;
     if (keys) return json(c, 409, `${keys} API key${keys === 1 ? "" : "s"} run as this agent; delete ${keys === 1 ? "it" : "them"} first`);
     // An ENS link it had stays; recreating the agent reads the chain and re-links as needed.
@@ -718,6 +734,7 @@ export function buildPlatform(d: PlatformDeps) {
     if (a.g.kind === "demo") return json(c, 403, "the shared demo is for the Playground; create your own gateway to connect agents");
     const { name, agent } = (await c.req.json().catch(() => ({}))) as { name?: string; agent?: string };
     const n = String(name ?? "").trim().slice(0, 40) || "agent";
+    if (agent && a.m.role !== "admin") return json(c, 403, "only admins make keys for a specific agent; yours run as the agent you're assigned");
     if (agent && !(a.g.agents ?? []).some((x) => x.label === agent)) return json(c, 400, `no agent "${agent}" in this gateway`);
     if (a.g.keys.filter((k) => k.member === a.m.address).length >= 20) return json(c, 403, "20 keys per member; delete one first");
     const { key, secret } = store.createKey(a.g, a.m.address, n, agent || undefined);
@@ -742,7 +759,7 @@ export function buildPlatform(d: PlatformDeps) {
    * runs as the agent it was made for (`o.agent`: its label, or null for the gateway default), and the Console may
    * pick among this gateway's own agents. Nothing can name another gateway's policy.
    */
-  async function forward(c: Context, g: Gateway, m: Member, path: string, o: { body?: unknown; query?: Record<string, string>; agent?: string | null } = {}) {
+  async function forward(c: Context, g: Gateway, m: Member, path: string, o: { body?: unknown; query?: Record<string, string>; agent?: string } = {}) {
     if (path === "/v1/chat/completions") {
       const wait = limit(`${g.id}|${m.address}`, g.kind === "demo" ? L.demoChatPerHour : L.chatPerHour);
       if (wait) return c.json({ error: { message: `rate limit: too many requests this hour; try again in ${wait} min`, type: "rate_limit_error" } }, 429);
@@ -757,11 +774,11 @@ export function buildPlatform(d: PlatformDeps) {
     headers.delete("cookie");
     headers.delete("x-airlock-requester-id");
     if (g.kind === "user") {
+      // The agent (and so the ENS policy) comes from us: a service key's own agent, else the member's assignment,
+      // read now so a reassignment applies to the next request. Nobody picks a laxer agent for themselves.
       const n = gatewayNames(g.slug, d.root);
-      const own = new Set((g.agents ?? []).map((x) => n.agent(x.label)));
-      const asked = headers.get("x-airlock-agent") ?? "";
-      const agent = o.agent !== undefined ? (o.agent && own.has(n.agent(o.agent)) ? n.agent(o.agent) : n.policy) : own.has(asked) ? asked : n.policy;
-      headers.set("x-airlock-agent", agent);
+      const label = o.agent ?? m.agent;
+      headers.set("x-airlock-agent", label && (g.agents ?? []).some((x) => x.label === label) ? n.agent(label) : n.policy);
       headers.set("x-airlock-user", encodeURIComponent(m.label));
     } else if (!headers.get("x-airlock-user")) headers.set("x-airlock-user", encodeURIComponent(m.label));
     headers.set("x-airlock-requester-id", m.address);
@@ -784,7 +801,7 @@ export function buildPlatform(d: PlatformDeps) {
     if (!hit) return c.json({ error: { message: "missing or invalid Airlock API key (create one on the Connect page)", type: "authentication_error" } }, 401);
     const path = new URL(c.req.url).pathname;
     if (!needFor(c.req.method, path)) return c.json({ error: { message: "not found", type: "invalid_request_error" } }, 404);
-    return forward(c, hit.g, hit.member, path, { agent: hit.key.agent ?? null });
+    return forward(c, hit.g, hit.member, path, { agent: hit.key.agent });
   });
 
   // The Console: /g/<slug>/… with the session cookie, checked against the member's role.
@@ -799,7 +816,12 @@ export function buildPlatform(d: PlatformDeps) {
     const n = gatewayNames(g.slug, d.root);
     const myApproverName = g.kind === "user" && canApprove(m.role) ? n.approver(m.label) : undefined;
 
-    if (c.req.method === "GET" && path === "/config") return c.json({ ...t.config, me: { address: m.address, label: m.label, role: m.role, approverName: myApproverName } });
+    if (c.req.method === "GET" && path === "/config") {
+      // Agents are read live from the store: adding one mustn't rebuild the pipeline (that drops approval scope).
+      const agents = g.kind === "user" ? (g.agents ?? []).map((x) => ({ label: x.label, name: n.agent(x.label), policy: x.policy ? n.namedPolicy(x.policy) : null })) : undefined;
+      const myAgent = g.kind === "user" && m.agent && (g.agents ?? []).some((x) => x.label === m.agent) ? m.agent : undefined;
+      return c.json({ ...t.config, ...(agents && { agents }), me: { address: m.address, label: m.label, role: m.role, approverName: myApproverName, agent: myAgent ?? null, agentName: myAgent ? n.agent(myAgent) : g.kind === "user" ? n.policy : null } });
+    }
     // Full request (original text, real names) only for those who decide on it, and for the one who asked.
     const one = c.req.method === "GET" && /^\/approvals\/([\w-]+)$/.exec(path);
     if (one) {

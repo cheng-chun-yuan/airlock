@@ -468,7 +468,7 @@
     </div>
     <div class="demo-grid">
       <div class="pane-card">
-        <div class="pane-head"><p class="eyebrow">Agent · <select class="agent-select" id="demoAgent" title="x-airlock-agent: which ENS policy this agent runs under"></select></p><div class="trace" id="demoTrace"></div></div>
+        <div class="pane-head"><p class="eyebrow">Agent · <select class="agent-select" id="demoAgent" title="x-airlock-agent: which ENS policy this agent runs under"></select><span class="mono" id="myAgent" hidden title="Assigned by an admin: its ENS policy applies to all your requests"></span></p><div class="trace" id="demoTrace"></div></div>
         <div class="convo" id="demoConvo"><div class="muted">Ask something, or pick one of the examples.</div></div>
         <div class="composer-meta one">
           <label><span>Reason (shown to the approver)</span><input class="field" id="demoWhy" placeholder="Why does this need a frontier model?" /></label>
@@ -1021,7 +1021,7 @@ async function demoSend(text, history) {
   let answer = "";
   try {
     const headers = { "content-type":"application/json", "x-airlock-session":demo.session };
-    if (!$("#demoAgent").hidden) headers["x-airlock-agent"] = $("#demoAgent").value;
+    if (isDemo()) headers["x-airlock-agent"] = $("#demoAgent").value;
     if ($("#demoWhy").value.trim()) headers["x-airlock-justification"] = encodeURIComponent($("#demoWhy").value.trim());
     const res = await fetch(api("/v1/chat/completions"), { method:"POST", headers, body:JSON.stringify({ model:`airlock/${cfg.defaultClaudeModel}`, stream:true, messages }) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
@@ -1263,7 +1263,10 @@ async function enterGateway(slug) {
   $("#gwSwitch").onchange = (e) => (location.href = e.target.value === "+" ? "/console#new" : e.target.value ? `/console/${e.target.value}` : "/console");
   $("#tabSettings").hidden = cfg.me?.role !== "admin" || isDemo();
   $("#pgWho").textContent = `${cfg.me?.label ?? "you"}${cfg.me?.role ? ` (${cfg.me.role})` : ""}`;
-  $("#demoAgent").hidden = !isDemo() && !(cfg.agents ?? []).length;
+  // Your own gateways: you run as the agent an admin assigned you (the server enforces it; this just says which).
+  $("#demoAgent").hidden = !isDemo();
+  $("#myAgent").hidden = isDemo();
+  if (!isDemo()) $("#myAgent").textContent = cfg.me?.agent ?? "gateway default";
   $("#apDemo").hidden = !isDemo(); $("#teamBody").hidden = isDemo();
   $("#ensAgentsPanel").hidden = !isDemo() && !(cfg.agents ?? []).length; // one policy and no agents: nothing to compare
   $("#ens-eyebrow") && ($("#ens-eyebrow").textContent = isDemo() ? "Agents & policy · ENSv2 · read live" : "Policy · ENSv2 · read live");
@@ -1583,11 +1586,15 @@ async function loadTeam() {
   const [team, invites] = await Promise.all([j(`/api/gateways/${GW}/members`), cfg.me.role === "admin" ? j(`/api/gateways/${GW}/invites`) : Promise.resolve([])]);
   const admin = cfg.me.role === "admin", mine = team.find((m) => m.address === cfg.me.address);
   const roleCell = (m) => admin && !m.owner ? `<select class="agent-select" data-role="${esc(m.address)}">${["admin", "approver", "member"].map((r) => `<option ${r === m.role ? "selected" : ""}>${r}</option>`).join("")}</select>` : `<span class="pill ${esc(m.role)}">${esc(m.owner ? "owner" : m.role)}</span>`;
+  const agentList = cfg.agents ?? [];
+  const agentCell = (m) => admin && agentList.length
+    ? `<select class="agent-select" data-agent="${esc(m.address)}"><option value="">default</option>${agentList.map((x) => `<option value="${esc(x.label)}" ${m.agent === x.label ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select>`
+    : `<span class="${m.agent ? "mono" : "muted"}">${esc(m.agent ?? "default")}</span>`;
   const status = (m) => !m.approverName ? `<span class="muted">—</span>` : m.enrolled ? `<span class="tag approved">enrolled</span>` : `<span class="tag pending">not enrolled</span>`;
   box.innerHTML = `<div class="ledger-head"><div><p class="eyebrow">Members</p><h2>${team.length} ${team.length === 1 ? "person" : "people"} in ${esc(cfg.name)}</h2><div class="root">approver role ${ensApp(cfg.approverRole)}</div></div><div><button class="btn" id="teamRefresh">Refresh</button></div></div>
     <div class="ens-grid">
-      <div class="panel"><h3>People</h3><table class="matrix"><tr><th>name</th><th>role</th><th>approver (ENS)</th><th>keys</th><th></th></tr>${team.map((m) => `<tr><td>${esc(m.label)}${m.address === cfg.me.address ? ' <span class="muted">(you)</span>' : ""}<br><span class="muted" style="font-size:11px">${esc(shortAddr(m.address))}</span></td><td>${roleCell(m)}</td><td>${status(m)}${m.approverName ? `<br><span class="muted" style="font-size:11px">${esc(m.approverName.split(".")[0])}.approvers…</span>` : ""}</td><td>${m.keys}</td><td>${!m.owner && (admin || m.address === cfg.me.address) ? `<button class="linkish" data-remove="${esc(m.address)}">${m.address === cfg.me.address ? "leave" : "remove"}</button>` : ""}</td></tr>`).join("")}</table>
-        <p class="muted" style="font-size:12.5px; margin:10px 0 0">Removing someone deletes their API keys and takes their approver name off ENS. Admins can approve too, once enrolled.</p></div>
+      <div class="panel"><h3>People</h3><table class="matrix"><tr><th>name</th><th>role</th><th>runs as</th><th>approver (ENS)</th><th>keys</th><th></th></tr>${team.map((m) => `<tr><td>${esc(m.label)}${m.address === cfg.me.address ? ' <span class="muted">(you)</span>' : ""}<br><span class="muted" style="font-size:11px">${esc(shortAddr(m.address))}</span></td><td>${roleCell(m)}</td><td>${agentCell(m)}</td><td>${status(m)}${m.approverName ? `<br><span class="muted" style="font-size:11px">${esc(m.approverName.split(".")[0])}.approvers…</span>` : ""}</td><td>${m.keys}</td><td>${!m.owner && (admin || m.address === cfg.me.address) ? `<button class="linkish" data-remove="${esc(m.address)}">${m.address === cfg.me.address ? "leave" : "remove"}</button>` : ""}</td></tr>`).join("")}</table>
+        <p class="muted" style="font-size:12.5px; margin:10px 0 0"><b>Runs as</b>: the agent whose ENS policy applies to everything that person sends, from any key or the Playground. Only admins change it. Removing someone deletes their API keys and takes their approver name off ENS. Admins can approve too, once enrolled.</p></div>
       <div style="display:grid; gap:16px; align-content:start">
         ${mine?.approverName ? `<div class="panel"><h3>Your approver identity</h3>
           <p class="muted" style="margin:-4px 0 10px; font-size:13px">${mine.enrolled ? "You're enrolled: you can approve held requests." : "Verify with World ID once. Airlock creates your ENS name and stores only a commitment to it, never who you are."}</p>
@@ -1600,6 +1607,12 @@ async function loadTeam() {
       </div>
     </div>`;
   $("#teamRefresh").onclick = loadTeam;
+  $$("[data-agent]", box).forEach((sel) => (sel.onchange = async () => {
+    const d = await send("PATCH", `/api/gateways/${GW}/members/${sel.dataset.agent}`, { agent:sel.value || null });
+    toast(d.error ? "NOT CHANGED" : "AGENT ASSIGNED", d.error ?? `now runs as ${sel.value || "the gateway default"}; applies to their next request`);
+    if (sel.dataset.agent === cfg.me.address) cfg = await j("/config");
+    loadTeam();
+  }));
   $$("[data-role]", box).forEach((sel) => (sel.onchange = async () => {
     const d = await send("PATCH", `/api/gateways/${GW}/members/${sel.dataset.role}`, { role:sel.value });
     toast(d.error ? "NOT CHANGED" : "ROLE CHANGED", d.error ?? `now ${sel.value}${sel.value === "member" ? " (approver name revoked on ENS)" : ""}`); loadTeam();
@@ -1633,10 +1646,11 @@ async function loadKeys() {
   const list = await j(`/api/gateways/${GW}/keys`);
   const admin = cfg.me.role === "admin" && !isDemo();
   const agents = cfg.agents ?? [];
-  $("#keyAgent").hidden = !agents.length;
-  $("#keyAgent").innerHTML = `<option value="">runs as: gateway default</option>` + agents.map((a) => `<option value="${esc(a.label)}">runs as: ${esc(a.label)}</option>`).join("");
+  // Service keys for a specific agent are an admin thing; everyone else's keys follow their assignment.
+  $("#keyAgent").hidden = !agents.length || cfg.me.role !== "admin";
+  $("#keyAgent").innerHTML = `<option value="">runs as: key owner's agent</option>` + agents.map((a) => `<option value="${esc(a.label)}">service key: ${esc(a.label)}</option>`).join("");
   $("#keyList").innerHTML = Array.isArray(list) && list.length ? `<table class="matrix"><tr><th>name</th><th>key</th><th>agent</th>${admin ? "<th>member</th>" : ""}<th>created</th><th>last used</th><th></th></tr>` +
-    list.map((k) => `<tr><td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}…</td><td>${k.agent ? esc(k.agent) : '<span class="muted">default</span>'}</td>${admin ? `<td>${esc(k.memberLabel)}${k.mine ? " (you)" : ""}</td>` : ""}<td>${ago(k.createdAt)}</td><td>${k.lastUsedAt ? ago(k.lastUsedAt) : "never"}</td><td><button class="linkish" data-delkey="${esc(k.id)}">delete</button></td></tr>`).join("") + "</table>"
+    list.map((k) => `<tr><td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}…</td><td>${k.agent ? `${esc(k.agent)} <span class="muted">(service)</span>` : '<span class="muted">owner\'s agent</span>'}</td>${admin ? `<td>${esc(k.memberLabel)}${k.mine ? " (you)" : ""}</td>` : ""}<td>${ago(k.createdAt)}</td><td>${k.lastUsedAt ? ago(k.lastUsedAt) : "never"}</td><td><button class="linkish" data-delkey="${esc(k.id)}">delete</button></td></tr>`).join("") + "</table>"
     : `<div class="muted" style="font-size:13px">No keys yet.</div>`;
   $$("[data-delkey]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this key? Agents using it stop working.")) return; await send("DELETE", `/api/gateways/${GW}/keys/${b.dataset.delkey}`); loadKeys(); }));
 }
@@ -1717,7 +1731,7 @@ async function loadAgents() {
   const polRows = A.policies.map((p) => `<tr><td>${ensApp(p.name)}</td><td>${esc(p.policy.maxClass)}</td><td>${esc(p.policy.egress)}</td><td>${esc(p.policy.highRiskQuorum)}</td><td>${p.agents}</td><td><button class="linkish" type="button" data-edpol="${esc(p.label)}">edit</button> <button class="linkish" type="button" data-delpol="${esc(p.label)}">delete</button></td></tr>`).join("");
   const agRows = A.agents.map((a) => `<tr><td>${ensApp(a.name)}</td><td><select class="field" data-agpol="${esc(a.label)}">${[null, ...A.policies.map((p) => p.label)].map((p) => `<option value="${esc(p ?? "")}" ${(a.policy ?? null) === p ? "selected" : ""}>${esc(policyLabel(p))}</option>`).join("")}</select></td><td>${a.keys}</td><td><button class="linkish" type="button" data-delag="${esc(a.label)}">delete</button></td></tr>`).join("");
   el.innerHTML = `<fieldset class="fs"><legend>Agents</legend>
-    ${note(`An API key runs as one agent, and its ENS name picks the policy. A new agent follows the gateway policy through the ENS wildcard: nothing to sign. Pointing one at a named policy is an ENS link your wallet signs; edit that policy once and every linked agent follows.`)}
+    ${note(`Admins assign each member an agent on the Members page; everything they send runs under that agent's ENS policy. A new agent follows the gateway policy through the ENS wildcard: nothing to sign. Pointing one at a named policy is an ENS link your wallet signs; edit that policy once and every linked agent (and every member assigned to it) follows.`)}
     ${A.agents.length ? `<table class="matrix"><tr><th>agent</th><th>policy</th><th>keys</th><th></th></tr>${agRows}</table>` : `<div class="muted" style="font-size:13px">No agents yet. Keys without one run under ${ensApp(A.defaultPolicy.name)}.</div>`}
     <div class="inline" style="margin-top:10px"><input class="field" id="agLabel" placeholder="agent name, e.g. intern-bot" maxlength="32" /><select class="field" id="agPolicy">${[null, ...A.policies.map((p) => p.label)].map((p) => `<option value="${esc(p ?? "")}">${esc(policyLabel(p))}</option>`).join("")}</select><button class="btn" type="button" id="agAdd">Add agent</button></div>
     <div class="err" id="agErr"></div>

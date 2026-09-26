@@ -10,6 +10,7 @@ import { SiweAuth } from "./auth";
 import { buildPlatform, policyRecords } from "./routes";
 import { PlatformStore, Vault, type Gateway } from "./store";
 import type { Tenant, Tenants } from "./tenants";
+import type { EnsProvisioner } from "@airlock/registry";
 
 /** A gateway API stand-in that echoes what the platform forwarded: path, identity headers and body. */
 function echoTenant(gw: Gateway): Tenant {
@@ -28,7 +29,7 @@ function echoTenant(gw: Gateway): Tenant {
   return { gw, app, approvals, audit: undefined as never, roles: {} as never, local: undefined as never, egress: undefined as never, config: { kind: gw.kind, slug: gw.slug } };
 }
 
-function setup() {
+function setup(provisioner?: EnsProvisioner) {
   const store = new PlatformStore(join(mkdtempSync(join(tmpdir(), "airlock-")), "platform.json"));
   const tenants = new Map<string, Tenant>();
   const fake = { get: (g: Gateway) => tenants.get(g.id) ?? tenants.set(g.id, echoTenant(g)).get(g.id)!, running: () => [...tenants.values()], drop() {} } as unknown as Tenants;
@@ -42,6 +43,7 @@ function setup() {
     maxGatewaysPerUser: 3,
     consoleHtml: () => "<html>",
     publicUrl: "http://localhost",
+    provisioner,
   });
   const people = Object.fromEntries(["owner", "bob", "eve", "mallory"].map((n) => [n, privateKeyToAccount(generatePrivateKey())]));
   const gw = store.add({
@@ -157,19 +159,31 @@ test("API keys: pick the gateway and member; die with the membership", async () 
   assert.equal((await call("alk_nope")).status, 401);
   const ok = (await (await call(k.j.secret, { "x-airlock-user": "ceo", "x-airlock-agent": "contract-agent.agents.airlock.eth", "x-airlock-requester-id": "0xdead" })).json()) as any;
   assert.deepEqual([ok.user, ok.requesterId, ok.agent], ["eve", people.eve.address.toLowerCase(), "policy.acme.airlock.eth"], "a key without an agent runs under the gateway policy");
-  // A key made for an agent runs as that agent, whatever the client claims; only this gateway's agents exist.
-  assert.equal((await as("eve")("POST", "/api/gateways/acme/keys", { name: "x", agent: "intern-bot" })).status, 400);
-  gw.agents = [{ label: "intern-bot", createdAt: 0 }];
+  // Agents are a permission boundary: an admin assigns one, and every request the member makes runs under it.
+  gw.agents = [{ label: "intern-bot", createdAt: 0 }, { label: "contract-bot", createdAt: 0 }];
   store.save();
-  const kb = await as("eve")("POST", "/api/gateways/acme/keys", { name: "intern", agent: "intern-bot" });
-  assert.equal(kb.j.agent, "intern-bot");
-  const asBot = (await (await call(kb.j.secret, { "x-airlock-agent": "policy.other.airlock.eth" })).json()) as any;
-  assert.equal(asBot.agent, "intern-bot.agents.acme.airlock.eth");
-  assert.equal((await as("owner")("DELETE", "/api/gateways/acme/agents/intern-bot")).status, 409, "an agent with keys can't be deleted");
-  // The Console may pick among the gateway's own agents, and nothing else.
-  const pick = (agent: string) => as("eve")("POST", "/g/acme/v1/chat/completions", { model: "m", messages: [] }, { "x-airlock-agent": agent }).then((r) => r.j.agent);
-  assert.equal(await pick("intern-bot.agents.acme.airlock.eth"), "intern-bot.agents.acme.airlock.eth");
-  assert.equal(await pick("contract-agent.agents.airlock.eth"), "policy.acme.airlock.eth");
+  const eveAddr = people.eve.address.toLowerCase();
+  const pick = (agent?: string) => as("eve")("POST", "/g/acme/v1/chat/completions", { model: "m", messages: [] }, agent ? { "x-airlock-agent": agent } : {}).then((r) => r.j.agent);
+  assert.equal((await as("eve")("PATCH", `/api/gateways/acme/members/${eveAddr}`, { agent: "contract-bot" })).status, 403, "members can't assign themselves");
+  assert.equal((await as("owner")("PATCH", `/api/gateways/acme/members/${eveAddr}`, { agent: "nope" })).status, 400);
+  assert.equal((await as("owner")("PATCH", `/api/gateways/acme/members/${eveAddr}`, { agent: "intern-bot" })).status, 200);
+  // Her existing key follows the new assignment at once; neither it nor the Console can pick a laxer agent.
+  const viaKey = (await (await call(k.j.secret, { "x-airlock-agent": "contract-bot.agents.acme.airlock.eth" })).json()) as any;
+  assert.equal(viaKey.agent, "intern-bot.agents.acme.airlock.eth");
+  assert.equal(await pick("contract-bot.agents.acme.airlock.eth"), "intern-bot.agents.acme.airlock.eth");
+  assert.equal(await pick("contract-agent.agents.airlock.eth"), "intern-bot.agents.acme.airlock.eth");
+  assert.equal((await as("eve")("GET", "/g/acme/config")).j.me.agent, "intern-bot");
+  // Only admins make service keys for a specific agent; those run as it whoever holds them.
+  assert.equal((await as("eve")("POST", "/api/gateways/acme/keys", { name: "x", agent: "contract-bot" })).status, 403);
+  const svc = await as("owner")("POST", "/api/gateways/acme/keys", { name: "bot", agent: "contract-bot" });
+  assert.equal(svc.status, 201);
+  assert.equal(((await (await call(svc.j.secret)).json()) as any).agent, "contract-bot.agents.acme.airlock.eth");
+  // An agent someone runs as, or a service key uses, can't be deleted.
+  assert.equal((await as("owner")("DELETE", "/api/gateways/acme/agents/intern-bot")).status, 409, "assigned to eve");
+  assert.equal((await as("owner")("DELETE", "/api/gateways/acme/agents/contract-bot")).status, 409, "a service key uses it");
+  // Back to the default: the gateway policy.
+  await as("owner")("PATCH", `/api/gateways/acme/members/${eveAddr}`, { agent: null });
+  assert.equal(await pick(), "policy.acme.airlock.eth");
   assert.equal((await app.request("/v1/admin/revoke", { method: "POST", headers: { authorization: `Bearer ${k.j.secret}` } })).status, 404, "keys only reach the model routes");
   await as("owner")("DELETE", `/api/gateways/acme/members/${people.eve.address.toLowerCase()}`);
   assert.equal((await call(k.j.secret)).status, 401);
@@ -211,4 +225,51 @@ test("abuse limits: chat per member per hour; no API keys on the shared demo", a
   const chat = () => app.request("/g/demo/v1/chat/completions", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: "{}" });
   assert.deepEqual([(await chat()).status, (await chat()).status, (await chat()).status], [200, 200, 429]);
   assert.equal((await app.request("/api/gateways/demo/keys", { method: "POST", headers: { cookie, "content-type": "application/json" }, body: "{}" })).status, 403);
+});
+
+test("after hand-over, policies and agent links are signed by the owner's wallet and checked", async () => {
+  const GOOD = `0x${"a".repeat(64)}`, BAD = `0x${"b".repeat(64)}`;
+  let owner = "";
+  const tx = (what: string) => ({ to: "0x0000000000000000000000000000000000000001", data: "0x", chainId: 11155111, what });
+  const fake = {
+    available: async () => true,
+    canWritePolicy: async (_r: string, who: string) => who.toLowerCase() === owner,
+    canLink: async (_r: string, who: string) => who.toLowerCase() === owner,
+    policyTx: () => tx("write policy"),
+    checkPolicyTx: async (_r: string, _w: unknown, h: string) => (h === GOOD ? undefined : "wrong records"),
+    agentLinkTx: async () => tx("link"),
+    checkAgentLink: async (_r: string, _a: string, _p: string | null, h: string) => (h === GOOD ? undefined : "not linked"),
+    agentsSetup: async () => [],
+    provision: async () => ({}),
+  } as unknown as EnsProvisioner;
+  const { login, as, store, gw, people } = setup(fake);
+  owner = people.owner.address.toLowerCase();
+  gw.ens.state = { resolver: "0x0000000000000000000000000000000000000002", registry: "0x0000000000000000000000000000000000000003", done: { "hand over policy": "existing", "hand over registry": "existing" } };
+  gw.members.push({ address: people.bob.address.toLowerCase(), label: "bob", role: "admin", joinedAt: 0 }, { address: people.eve.address.toLowerCase(), label: "eve", role: "member", joinedAt: 0 });
+  store.save();
+  await Promise.all(["owner", "bob", "eve"].map(login));
+  const strict = { policy: { maxClass: "internal", egress: "approval", highRiskQuorum: 2 } };
+
+  assert.equal((await as("eve")("PUT", "/api/gateways/acme/policies/strict", strict)).status, 403, "members can't");
+  assert.equal((await as("bob")("PUT", "/api/gateways/acme/policies/strict", strict)).status, 403, "an admin without ENS rights can't either");
+  const ask = await as("owner")("PUT", "/api/gateways/acme/policies/strict", strict);
+  assert.equal(ask.status, 202);
+  assert.equal(ask.j.sign[0].what, "write policy");
+  assert.equal(gw.policies?.length ?? 0, 0, "nothing saved before the chain has it");
+  assert.equal((await as("owner")("PUT", "/api/gateways/acme/policies/strict", { ...strict, txs: [BAD] })).status, 409);
+  assert.equal((await as("owner")("PUT", "/api/gateways/acme/policies/strict", { ...strict, txs: [GOOD] })).status, 200);
+  assert.equal(gw.policies?.[0].label, "strict");
+  // Saving it unchanged asks for nothing.
+  const same = await as("owner")("PUT", "/api/gateways/acme/policies/strict", strict);
+  assert.equal(same.status, 200);
+  assert.equal(same.j.sign, undefined);
+
+  // Linking an agent to it: the owner signs, the server checks the link landed.
+  const link = await as("owner")("PUT", "/api/gateways/acme/agents/intern-bot", { policy: "strict" });
+  assert.equal(link.status, 202);
+  assert.equal((await as("owner")("PUT", "/api/gateways/acme/agents/intern-bot", { policy: "strict", txs: [BAD] })).status, 409);
+  assert.equal((await as("owner")("PUT", "/api/gateways/acme/agents/intern-bot", { policy: "strict", txs: [GOOD] })).status, 200);
+  assert.deepEqual(gw.agents?.map((a) => [a.label, a.policy]), [["intern-bot", "strict"]]);
+  assert.equal((await as("owner")("PUT", "/api/gateways/acme/agents/x", { policy: "missing" })).status, 400);
+  assert.equal((await as("owner")("DELETE", "/api/gateways/acme/policies/strict")).status, 409, "intern-bot still uses it");
 });
