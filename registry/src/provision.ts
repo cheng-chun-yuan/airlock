@@ -9,6 +9,10 @@ import { GATEWAY_KEYS, sepoliaTransport, txLock } from "./ens";
  *
  *   <slug>.airlock.eth                 owner = the creator's wallet · subregistry R_gw · no resolver
  *   ├─ policy.<slug>.airlock.eth       resolver → airlock.maxClass / egress / models / approverRole / highRiskQuorum
+ *   │   └─ <p>.policy.<slug>…          named policy: its own record, found through policy.<slug> (ENSIP-10 wildcard)
+ *   ├─ agents.<slug>.airlock.eth       resolver, no subregistry: every <agent>.agents.<slug> resolves (wildcard)
+ *   │   └─ <agent>.agents.<slug>…      no record → the resolver's default record, linked to policy.<slug>;
+ *   │                                  or linkToNode → <p>.policy.<slug> (ENSv2 aliasing: edit once, all follow)
  *   ├─ approvers.<slug>.airlock.eth    subregistry R_approvers · no resolver     ← the approver role
  *   │   └─ <name>.approvers.<slug>…    resolver → airlock.approver = commitment  (created on enrollment)
  *   └─ audit.<slug>.airlock.eth        resolver → airlock.auditRoot
@@ -58,8 +62,30 @@ const abi = parseAbi([
   "function roles(uint256 resource, address account) view returns (uint256)",
   "function getRecordId(bytes32 node) view returns (uint256)",
   "event TextUpdated(uint256 indexed recordId, string indexed keyHash, string key, string value)",
+  "function linkToNode(bytes sourceName, bytes32 targetNode)",
+  "function linkToRecord(bytes sourceName, uint256 recordId)",
+  "function getExpiry(uint256 anyId) view returns (uint64)",
 ]);
 const ROLE_SET_TEXT = 1n << 4n;
+const ROLE_LINK = 1n << 28n;
+const ROLE_REGISTRAR = 1n << 0n;
+/** DNS encoding of the root name: node 0, the resolver's default record (what a name without its own record reads). */
+const DEFAULT_RECORD = "0x00";
+const dnsName = (name: string) => toHex(packetToBytes(normalize(name)));
+
+/** A transaction for the owner's wallet to sign. */
+export interface OwnerTx {
+  to: Address;
+  data: Hex;
+  chainId: number;
+  /** What it does, shown next to the wallet prompt. */
+  what: string;
+}
+/** Records to write to one name. */
+export interface PolicyWrite {
+  name: string;
+  records: Partial<PolicyRecords>;
+}
 const resolverInit = parseAbi(["struct Grant { address account; uint256 roleBitmap; }", "function initialize(Grant[] grants, bytes[] calls)"]);
 
 /** Labels a gateway can't take: they'd shadow the platform's own names. */
@@ -78,20 +104,34 @@ export type PolicyRecords = Record<"maxClass" | "egress" | "models" | "approverR
 /** Names under a gateway, in one place so the gateway and the Console agree. */
 export function gatewayNames(slug: string, root: string) {
   const base = `${slug}.${root}`;
-  return { base, policy: `policy.${base}`, approverRole: `approvers.${base}`, audit: `audit.${base}`, approver: (label: string) => `${label}.approvers.${base}` };
+  return {
+    base,
+    policy: `policy.${base}`,
+    approverRole: `approvers.${base}`,
+    audit: `audit.${base}`,
+    agents: `agents.${base}`,
+    approver: (label: string) => `${label}.approvers.${base}`,
+    agent: (label: string) => `${label}.agents.${base}`,
+    namedPolicy: (label: string) => `${label}.policy.${base}`,
+  };
 }
 
 export interface ProvisionState {
   resolver?: Address;
   registry?: Address;
   approverRegistry?: Address;
-  /** step → tx hash ("existing" when a retry found the step already on-chain) */
-  done: Record<string, Hex | "existing">;
+  /**
+   * step → tx hash. "existing": a retry found it already on-chain. "skipped": the platform had already handed the
+   * gateway over, so the owner does it instead (agents: see EnsProvisioner.agentsSetup).
+   */
+  done: Record<string, Hex | "existing" | "skipped">;
+  /** The owner-side agents setup is on-chain (cached once seen). */
+  agentsReady?: boolean;
   /** Block before the first transaction: where a retry starts looking for a deploy whose receipt was lost. */
   fromBlock?: string;
 }
 
-export const PROVISION_STEPS = ["deploy resolver", "deploy registry", "deploy approver registry", "register name", "register policy", "register approvers", "register audit", "write policy", "hand over policy", "hand over registry"] as const;
+export const PROVISION_STEPS = ["deploy resolver", "deploy registry", "deploy approver registry", "register name", "register policy", "register approvers", "register audit", "register agents", "write policy", "hand over policy", "hand over registry"] as const;
 
 export interface ProvisionOpts {
   client: PublicClient;
@@ -153,7 +193,7 @@ export class EnsProvisioner {
       s.fromBlock = String(await this.client.getBlockNumber());
       o.save(s);
     }
-    const step = async (name: (typeof PROVISION_STEPS)[number], fn: () => Promise<{ hash: Hex | "existing"; set?: Partial<ProvisionState> }>) => {
+    const step = async (name: (typeof PROVISION_STEPS)[number], fn: () => Promise<{ hash: Hex | "existing" | "skipped"; set?: Partial<ProvisionState> }>) => {
       o.progress?.(name, i++, PROVISION_STEPS.length);
       if (s.done[name]) return;
       const r = await fn();
@@ -197,18 +237,29 @@ export class EnsProvisioner {
     await step("register policy", reg(s.registry!, "policy", zeroAddress, s.resolver!));
     await step("register approvers", reg(s.registry!, "approvers", s.approverRegistry!, zeroAddress));
     await step("register audit", reg(s.registry!, "audit", zeroAddress, s.resolver!));
+    await step("register agents", async () => {
+      // Gateways built before agents existed have already given up R_gw; their owner registers it (agentsSetup).
+      if (!(await this.registered(s.registry!, "agents")) && !(await this.rootRoles(s.registry!))) return { hash: "skipped" as const };
+      return reg(s.registry!, "agents", zeroAddress, s.resolver!)();
+    });
     // Owner and platform are the same account only on a dev setup; there's nobody to hand over to.
     const handOver = o.owner.toLowerCase() !== me.toLowerCase();
     await step("write policy", async () => {
       // Already handed over (a retry after the receipt was lost): the policy landed in that same transaction.
       if (handOver && !(await this.rootRoles(s.resolver!))) return { hash: "existing" as const };
-      const calls = [...this.policyCalls(names.policy, o.policy()), ...(handOver ? await this.handOverCalls(s.resolver!, names.policy) : [])];
+      // The policy record, then the default record linked to it (agents without their own policy read it), then hand-over.
+      const calls = [
+        ...this.policyCalls([{ name: names.policy, records: o.policy() }]),
+        this.linkDefaultCall(names.policy),
+        ...(handOver ? await this.handOverCalls(s.resolver!, names.policy) : []),
+      ];
       return { hash: (await this.send("write policy", { address: s.resolver!, functionName: "multicall", args: [calls] })).transactionHash };
     });
     // A no-op for new gateways ("write policy" did it); gateways provisioned before the hand-over existed get it here.
     await step("hand over policy", async () => {
       if (!handOver || !(await this.rootRoles(s.resolver!))) return { hash: "existing" as const };
-      const calls = await this.handOverCalls(s.resolver!, names.policy);
+      const linked = await this.defaultLinked(s.resolver!, names.policy);
+      const calls = [...(linked ? [] : [this.linkDefaultCall(names.policy)]), ...(await this.handOverCalls(s.resolver!, names.policy))];
       return { hash: (await this.send("hand over policy", { address: s.resolver!, functionName: "multicall", args: [calls] })).transactionHash };
     });
     await step("hand over registry", async () => {
@@ -232,9 +283,24 @@ export class EnsProvisioner {
     return this.client.readContract({ address: contract, abi, functionName: "roles", args: [0n, this.account.address] });
   }
 
-  private policyCalls(policyName: string, records: Partial<PolicyRecords>) {
-    const dns = toHex(packetToBytes(normalize(policyName)));
-    return Object.entries(records).map(([k, v]) => encodeFunctionData({ abi, functionName: "setText", args: [dns, `airlock.${k}`, v ?? ""] }));
+  private policyCalls(writes: PolicyWrite[]) {
+    return writes.flatMap(({ name, records }) =>
+      Object.entries(records).map(([k, v]) => encodeFunctionData({ abi, functionName: "setText", args: [dnsName(name), `airlock.${k}`, v ?? ""] })),
+    );
+  }
+
+  private linkDefaultCall(policyName: string) {
+    return encodeFunctionData({ abi, functionName: "linkToNode", args: [DEFAULT_RECORD, namehash(normalize(policyName))] });
+  }
+
+  private recordId(resolver: Address, name: string, blockNumber?: bigint) {
+    return this.client.readContract({ address: resolver, abi, functionName: "getRecordId", args: [name ? namehash(normalize(name)) : `0x${"0".repeat(64)}`], blockNumber });
+  }
+
+  /** Is the default record the gateway policy's record? */
+  private async defaultLinked(resolver: Address, policyName: string, blockNumber?: bigint) {
+    const [d, p] = await Promise.all([this.recordId(resolver, "", blockNumber), this.recordId(resolver, policyName, blockNumber)]);
+    return d !== 0n && d === p;
   }
 
   /** Keep ROLE_SET_TEXT on the gateway's own keys, then give up every root role (runs inside a resolver multicall). */
@@ -248,14 +314,20 @@ export class EnsProvisioner {
     return [...grants, encodeFunctionData({ abi, functionName: "revokeRootRoles", args: [await this.rootRoles(resolver), me] })];
   }
 
-  /** One multicall: every policy record for the gateway, so a policy change lands atomically. Only before hand-over. */
-  async writePolicy(resolver: Address, policyName: string, records: Partial<PolicyRecords>): Promise<Hex> {
-    return (await this.send("write policy", { address: resolver, functionName: "multicall", args: [this.policyCalls(policyName, records)] })).transactionHash;
+  /** One multicall: policy records for one or more names, so a change lands atomically. Only before hand-over. */
+  async writePolicy(resolver: Address, writes: PolicyWrite[]): Promise<Hex> {
+    return (await this.send("write policy", { address: resolver, functionName: "multicall", args: [this.policyCalls(writes)] })).transactionHash;
   }
 
-  /** The transaction the owner's wallet signs to change the policy (the platform can't send it for them). */
-  policyTx(resolver: Address, policyName: string, records: Partial<PolicyRecords>) {
-    return { to: resolver, data: encodeFunctionData({ abi, functionName: "multicall", args: [this.policyCalls(policyName, records)] }), chainId: sepolia.id };
+  /** Does the platform still hold the policy keys on this resolver (a gateway not yet handed over)? */
+  async platformWritesPolicy(resolver: Address): Promise<boolean> {
+    return ((await this.rootRoles(resolver)) & ROLE_SET_TEXT) !== 0n;
+  }
+
+  /** The transaction the owner's wallet signs to change policy records (the platform can't send it for them). */
+  policyTx(resolver: Address, writes: PolicyWrite[]): OwnerTx {
+    const what = `write ${writes.map((w) => w.name).join(", ")}`;
+    return { to: resolver, data: encodeFunctionData({ abi, functionName: "multicall", args: [this.policyCalls(writes)] }), chainId: sepolia.id, what };
   }
 
   /** May `account` write every policy key on this resolver? Asked of the chain, since the owner can grant others. */
@@ -267,18 +339,93 @@ export class EnsProvisioner {
     return perKey.every((r) => (r & ROLE_SET_TEXT) !== 0n);
   }
 
+  private async hasRootRole(contract: Address, account: Address, role: bigint) {
+    return ((await this.client.readContract({ address: contract, abi, functionName: "roles", args: [0n, account] })) & role) !== 0n;
+  }
+
   /**
-   * Did transaction `hash` write exactly `records` to the gateway's policy name? Read from its own TextUpdated
-   * events rather than the records, so a lagging RPC can't make a good write look missing. Returns why not, or undefined.
+   * Did transaction `hash` write exactly these records? Read from its own TextUpdated events rather than the
+   * records, so a lagging RPC can't make a good write look missing. Returns why not, or undefined.
    */
-  async checkPolicyTx(resolver: Address, policyName: string, records: Partial<PolicyRecords>, hash: Hex): Promise<string | undefined> {
+  async checkPolicyTx(resolver: Address, writes: PolicyWrite[], hash: Hex): Promise<string | undefined> {
+    const rcpt = await this.receipt(hash);
+    if (typeof rcpt === "string") return rcpt;
+    const events = parseEventLogs({ abi, logs: rcpt.logs, eventName: "TextUpdated" }).filter((ev) => ev.address.toLowerCase() === resolver.toLowerCase());
+    for (const { name, records } of writes) {
+      const recordId = await this.recordId(resolver, name, rcpt.blockNumber);
+      const written = new Map(events.filter((ev) => ev.args.recordId === recordId).map((ev) => [ev.args.key, ev.args.value]));
+      const wrong = Object.entries(records).filter(([k, v]) => written.get(`airlock.${k}`) !== (v ?? ""));
+      if (wrong.length) return `the transaction didn't write ${wrong.map(([k]) => k).join(", ")} on ${name} as asked`;
+    }
+  }
+
+  private async receipt(hash: Hex) {
     const rcpt = await this.client.waitForTransactionReceipt({ hash, timeout: 120_000 });
-    if (rcpt.status !== "success") return "the transaction reverted";
-    const recordId = await this.client.readContract({ address: resolver, abi, functionName: "getRecordId", args: [namehash(normalize(policyName))] });
-    const written = new Map<string, string>();
-    for (const ev of parseEventLogs({ abi, logs: rcpt.logs, eventName: "TextUpdated" }))
-      if (ev.address.toLowerCase() === resolver.toLowerCase() && ev.args.recordId === recordId) written.set(ev.args.key, ev.args.value);
-    const wrong = Object.entries(records).filter(([k, v]) => written.get(`airlock.${k}`) !== (v ?? ""));
-    if (wrong.length) return `the transaction didn't write ${wrong.map(([k]) => k).join(", ")} as asked`;
+    return rcpt.status === "success" ? rcpt : "the transaction reverted";
+  }
+
+  // ---------- agents ----------
+
+  /**
+   * What the owner still has to sign before agents resolve: agents.<slug> in R_gw (for gateways built before
+   * agents existed), and the default record linked to the gateway policy. Empty when agents are ready.
+   */
+  async agentsSetup(s: ProvisionState, names: ReturnType<typeof gatewayNames>, owner: Address, blockNumber?: bigint): Promise<OwnerTx[]> {
+    const txs: OwnerTx[] = [];
+    const agentsResolver = await this.client.readContract({ address: s.registry!, abi, functionName: "getResolver", args: ["agents"], blockNumber });
+    if (agentsResolver === zeroAddress) {
+      const expiry = await this.client.readContract({ address: s.registry!, abi, functionName: "getExpiry", args: [BigInt(keccak256(toBytes("policy")))], blockNumber });
+      txs.push({
+        to: s.registry!,
+        data: encodeFunctionData({ abi, functionName: "register", args: ["agents", owner, zeroAddress, s.resolver!, TOKEN_ROLES, expiry] }),
+        chainId: sepolia.id,
+        what: `register ${names.agents} (every agent name resolves through it)`,
+      });
+    }
+    if (!(await this.defaultLinked(s.resolver!, names.policy, blockNumber)))
+      txs.push({ to: s.resolver!, data: this.linkDefaultCall(names.policy), chainId: sepolia.id, what: `link the default record to ${names.policy} (agents without their own policy follow it)` });
+    return txs;
+  }
+
+  /** Can `account` sign the agents setup (register in R_gw, link on the resolver)? */
+  async canSetUpAgents(s: ProvisionState, account: Address) {
+    const [reg, link] = await Promise.all([this.hasRootRole(s.registry!, account, ROLE_REGISTRAR), this.hasRootRole(s.resolver!, account, ROLE_LINK)]);
+    return reg && link;
+  }
+
+  /** Did these setup transactions land, leaving agents ready? */
+  async checkAgentsSetup(s: ProvisionState, names: ReturnType<typeof gatewayNames>, owner: Address, hashes: Hex[]): Promise<string | undefined> {
+    let block = 0n;
+    for (const h of hashes) {
+      const rcpt = await this.receipt(h);
+      if (typeof rcpt === "string") return rcpt;
+      if (rcpt.blockNumber > block) block = rcpt.blockNumber;
+    }
+    const left = await this.agentsSetup(s, names, owner, block || undefined);
+    if (left.length) return `still to do: ${left.map((t) => t.what).join("; ")}`;
+  }
+
+  /** The transaction that points an agent at a named policy (or back at the gateway default), or none if it already does. */
+  async agentLinkTx(resolver: Address, agentName: string, policyName: string | null): Promise<OwnerTx | undefined> {
+    const [cur, want] = await Promise.all([this.recordId(resolver, agentName), policyName ? this.recordId(resolver, policyName) : 0n]);
+    if (policyName && want === 0n) throw new Error(`${policyName} has no records on-chain yet`);
+    if (cur === want) return;
+    const data = policyName
+      ? encodeFunctionData({ abi, functionName: "linkToNode", args: [dnsName(agentName), namehash(normalize(policyName))] })
+      : encodeFunctionData({ abi, functionName: "linkToRecord", args: [dnsName(agentName), 0n] });
+    return { to: resolver, data, chainId: sepolia.id, what: policyName ? `link ${agentName} → ${policyName}` : `${agentName} follows the gateway default` };
+  }
+
+  /** Did `hash` leave the agent reading `policyName`'s record (or the default record when null)? */
+  async checkAgentLink(resolver: Address, agentName: string, policyName: string | null, hash: Hex): Promise<string | undefined> {
+    const rcpt = await this.receipt(hash);
+    if (typeof rcpt === "string") return rcpt;
+    const [cur, want] = await Promise.all([this.recordId(resolver, agentName, rcpt.blockNumber), policyName ? this.recordId(resolver, policyName, rcpt.blockNumber) : 0n]);
+    if (cur !== want) return `${agentName} doesn't point at ${policyName ?? "the gateway default"} after that transaction`;
+  }
+
+  /** May `account` link records on this resolver (root-only in PermissionedResolver)? */
+  canLink(resolver: Address, account: Address) {
+    return this.hasRootRole(resolver, account, ROLE_LINK);
   }
 }

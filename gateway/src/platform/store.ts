@@ -44,8 +44,24 @@ export interface ApiKey {
   prefix: string;
   name: string;
   member: string;
+  /** The agent this key runs as (a label in Gateway.agents); unset = the gateway's default policy. */
+  agent?: string;
   createdAt: number;
   lastUsedAt?: number;
+}
+
+/** <label>.policy.<slug>: a policy agents can be linked to, besides the gateway default. */
+export interface NamedPolicy {
+  label: string;
+  policy: PolicyConfig;
+  createdAt: number;
+}
+
+/** <label>.agents.<slug>: its policy is a named one (linked on ENS), or the gateway default when unset. */
+export interface Agent {
+  label: string;
+  policy?: string;
+  createdAt: number;
 }
 
 /** Encrypted at rest (AES-256-GCM); never sent back to the browser. */
@@ -91,6 +107,8 @@ export interface Gateway {
   members: Member[];
   invites: Invite[];
   keys: ApiKey[];
+  agents?: Agent[];
+  policies?: NamedPolicy[];
 }
 
 interface Data {
@@ -183,9 +201,9 @@ export class PlatformStore {
   }
 
   // ---------- API keys ----------
-  createKey(g: Gateway, member: string, name: string): { key: ApiKey; secret: string } {
+  createKey(g: Gateway, member: string, name: string, agent?: string): { key: ApiKey; secret: string } {
     const secret = `alk_${randomBytes(24).toString("base64url")}`;
-    const key: ApiKey = { id: randomUUID(), hash: sha256(secret), prefix: secret.slice(0, 10), name, member: member.toLowerCase(), createdAt: Date.now() };
+    const key: ApiKey = { id: randomUUID(), hash: sha256(secret), prefix: secret.slice(0, 10), name, member: member.toLowerCase(), ...(agent && { agent }), createdAt: Date.now() };
     g.keys.push(key);
     this.save();
     return { key, secret };

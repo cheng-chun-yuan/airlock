@@ -236,9 +236,10 @@ export class EnsInspector {
       auditName: string;
       accounts: { label: string; address: Hex }[];
       approverRegistry?: Hex;
-      /** Agents to show, and the shared policy record they may be linked to (ENSv2 aliasing). */
+      /** Agents to show, and the shared policy records they may be linked to (ENSv2 aliasing). */
       agents?: string[];
       sharedPolicy?: string;
+      policies?: string[];
     },
   ) {}
 
@@ -261,12 +262,14 @@ export class EnsInspector {
     // (wildcard, for agents never registered), or its own record.
     const recordId = (name: string) =>
       resolver ? this.limit(() => this.client.readContract({ address: resolver, abi: inspectAbi, functionName: "getRecordId", args: [namehash(name)] }).catch(() => 0n)) : Promise.resolve(0n);
-    const sharedId = this.cfg.sharedPolicy ? await recordId(this.cfg.sharedPolicy) : 0n;
+    const shared = [...(this.cfg.sharedPolicy ? [this.cfg.sharedPolicy] : []), ...(this.cfg.policies ?? [])];
+    const sharedIds = await Promise.all(shared.map(async (name) => ({ name, id: await recordId(name) })));
     const agents = await Promise.all(
       (this.cfg.agents ?? [agent]).map(async (name) => {
         const id = await recordId(name);
         const [maxClass, egress, quorum] = await Promise.all(["airlock.maxClass", "airlock.egress", "airlock.highRiskQuorum"].map((k) => this.limit(() => text(this.client, name, k))));
-        return { name, recordId: String(id), source: id === 0n ? "org default (wildcard)" : sharedId && id === sharedId ? `linked → ${this.cfg.sharedPolicy}` : "own record", maxClass, egress, quorum };
+        const linkedTo = id === 0n ? undefined : sharedIds.find((x) => x.id === id && x.name !== name)?.name;
+        return { name, recordId: String(id), source: id === 0n ? "org default (wildcard)" : linkedTo ? `linked → ${linkedTo}` : "own record", linkedTo, maxClass, egress, quorum };
       }),
     );
     return {

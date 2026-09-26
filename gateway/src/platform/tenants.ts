@@ -112,7 +112,8 @@ export function buildUserTenant(p: PlatformContext, gw: Gateway, durable: Durabl
         agent: names.policy,
         auditName: names.audit,
         approverRegistry: st.approverRegistry,
-        agents: [names.policy],
+        agents: [names.policy, ...(gw.agents ?? []).map((a) => names.agent(a.label))],
+        policies: (gw.policies ?? []).map((p) => names.namedPolicy(p.label)),
         accounts: [
           { label: "owner", address: gw.owner as Hex },
           { label: "gateway", address: p.platformAddress as Hex },
@@ -128,6 +129,8 @@ export function buildUserTenant(p: PlatformContext, gw: Gateway, durable: Durabl
     name: gw.name,
     org: names.base,
     defaultAgent: names.policy,
+    /** This gateway's agents: the Console's Playground may run as any of them. */
+    agents: (gw.agents ?? []).map((a) => ({ label: a.label, name: names.agent(a.label), policy: a.policy ? names.namedPolicy(a.policy) : null })),
     approverRole: names.approverRole,
     auditName: names.audit,
     worldIdMode: p.verifier.mode,
@@ -210,7 +213,7 @@ export class Tenants {
     if (gw.kind === "demo" && this.demo) return this.demo;
     if (!this.p) throw new Error("self-serve gateways are not configured on this server");
     // Settings that change the pipeline (models, keys, ENS contracts, ENS readiness) make a new tenant.
-    const version = JSON.stringify([gw.local, gw.frontier, gw.ens.state.resolver, gw.ens.state.approverRegistry, gw.ens.status]);
+    const version = JSON.stringify([gw.local, gw.frontier, gw.ens.state.resolver, gw.ens.state.approverRegistry, gw.ens.status, gw.agents, gw.policies]);
     const hit = this.cache.get(gw.id);
     if (hit && hit.version === version) return hit.t;
     const durable = this.durable.get(gw.id) ?? this.durable.set(gw.id, durableFor(this.p!, gw)).get(gw.id)!;

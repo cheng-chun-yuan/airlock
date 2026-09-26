@@ -6,7 +6,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { Address, Hex } from "viem";
 import { CLASS_ORDER, type DataClass } from "@airlock/core";
 import { publicView } from "@airlock/approval";
-import { checkSlug, gatewayNames, PROVISION_STEPS, type EnsProvisioner, type PolicyRecords } from "@airlock/registry";
+import { checkSlug, gatewayNames, PROVISION_STEPS, type EnsProvisioner, type PolicyRecords, type PolicyWrite } from "@airlock/registry";
 import type { SiweAuth } from "./auth";
 import { canApprove, LABEL_RE, ROLES, type FrontierConfig, type Gateway, type LocalConfig, type Member, type PlatformStore, type PolicyConfig, type Role, type Vault } from "./store";
 import type { Tenants } from "./tenants";
@@ -71,12 +71,12 @@ function needFor(method: string, path: string): Need | undefined {
 }
 
 /** Policy form → ENS records. highRiskQuorum 0 = block high risk, 1 = one approver, 2+ = that many different humans. */
-export function policyRecords(gw: Gateway, root: string): PolicyRecords {
+export function policyRecords(gw: Gateway, root: string, policy: PolicyConfig = gw.policy): PolicyRecords {
   const n = gatewayNames(gw.slug, root);
-  const q = gw.policy.highRiskQuorum;
+  const q = policy.highRiskQuorum;
   return {
-    maxClass: gw.policy.maxClass,
-    egress: gw.policy.egress,
+    maxClass: policy.maxClass,
+    egress: policy.egress,
     models: gw.frontier.models.join(","),
     approverRole: n.approverRole,
     ownerRole: q === 1 ? n.approverRole : "",
@@ -339,41 +339,55 @@ export function buildPlatform(d: PlatformDeps) {
     const before = JSON.stringify(policyRecords(g, d.root));
     const next = { ...g, local: models.local!, frontier: models.frontier!, policy };
     const records = policyRecords(next, d.root);
-    let tx: string | undefined;
-    const resolver = g.ens.state.resolver;
-    const policyName = gatewayNames(g.slug, d.root).policy;
-    const ensError = (e: unknown) => ((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0];
     // Policy lives on ENS: it changes on-chain first, and the new settings are kept only if the chain took them.
-    // Once handed over, only a wallet with policy rights on the resolver (the owner's) can write it: the Console
-    // gets the transaction back to sign, then sends its hash, and we check it wrote exactly this policy.
-    if (JSON.stringify(records) !== before && d.provisioner && resolver && ownerSignsPolicy(g)) {
-      const signed = typeof body.policyTx === "string" && /^0x[0-9a-fA-F]{64}$/.test(body.policyTx) ? (body.policyTx as Hex) : undefined;
-      try {
-        if (!signed) {
-          if (!(await d.provisioner.canWritePolicy(resolver, a.address as Address, records)))
-            return json(c, 403, `Only the owner's wallet (${g.owner}) can change this gateway's policy: it's written on-chain, and the platform holds no rights to it.`);
-          return c.json({ sign: d.provisioner.policyTx(resolver, policyName, records) }, 202);
-        }
-        const wrong = await d.provisioner.checkPolicyTx(resolver, policyName, records, signed);
-        if (wrong) return json(c, 409, `Nothing changed: ${wrong}.`);
-        tx = signed;
-        d.policyChanged?.();
-      } catch (e) {
-        return json(c, 502, `ENS check failed, nothing changed: ${ensError(e)}`);
-      }
-    } else if (JSON.stringify(records) !== before && g.ens.status === "live" && d.provisioner && resolver) {
-      try {
-        tx = await d.provisioner.writePolicy(resolver, policyName, records);
-        d.policyChanged?.();
-      } catch (e) {
-        return json(c, 502, `ENS write failed, nothing changed: ${ensError(e)}`);
-      }
-    }
+    // Named policies carry the model allowlist too, so a models change rewrites theirs in the same transaction.
+    const n = gatewayNames(g.slug, d.root);
+    const writes: PolicyWrite[] = [];
+    if (JSON.stringify(records) !== before) writes.push({ name: n.policy, records });
+    if (records.models !== JSON.parse(before).models) for (const p of g.policies ?? []) writes.push({ name: n.namedPolicy(p.label), records: { models: records.models } });
+    const w = await writeRecords(c, g, a.address, writes, txsOf(body));
+    if (w instanceof Response) return w;
+    const { tx } = w;
     Object.assign(g, { name, local: next.local, frontier: next.frontier, policy });
     store.save();
     d.tenants.get(g); // rebuild now, so the next request uses the new models
     return c.json({ ok: true, tx, settings: { ...secretsView(g), policy: g.policy } });
   });
+
+  const HASH = /^0x[0-9a-fA-F]{64}$/;
+  /** Transaction hashes the owner's wallet sent for a change we asked it to sign. */
+  const txsOf = (body: Record<string, any>): Hex[] => (Array.isArray(body.txs) ? body.txs.filter((h: unknown) => typeof h === "string" && HASH.test(h)).slice(0, 4) : []);
+  const ensError = (e: unknown) => ((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0];
+  const notOwner = (g: Gateway) => `Only the owner's wallet (${g.owner}) can do this: it's an ENS change, and the platform holds no rights to it.`;
+
+  /**
+   * Write policy records on the gateway's resolver. Until hand-over the platform writes them; after it, the owner's
+   * wallet signs: without `txs` the Console gets `{ sign: [tx] }` back (202), and with them we check the
+   * transaction wrote exactly these records. Resolves to the tx hash, or to the error Response to send.
+   */
+  async function writeRecords(c: Context, g: Gateway, address: string, writes: PolicyWrite[], txs: Hex[]): Promise<{ tx?: string } | Response> {
+    const resolver = g.ens.state.resolver;
+    if (!writes.length || !d.provisioner || !resolver) return {};
+    try {
+      if (!ownerSignsPolicy(g)) {
+        // Provisioning writes whatever is saved by the time it gets to the policy.
+        if (g.ens.status !== "live") return {};
+        const tx = await d.provisioner.writePolicy(resolver, writes);
+        d.policyChanged?.();
+        return { tx };
+      }
+      if (!txs.length) {
+        if (!(await d.provisioner.canWritePolicy(resolver, address as Address, writes[0].records))) return json(c, 403, notOwner(g));
+        return c.json({ sign: [d.provisioner.policyTx(resolver, writes)] }, 202);
+      }
+      const wrong = await d.provisioner.checkPolicyTx(resolver, writes, txs[0]);
+      if (wrong) return json(c, 409, `Nothing changed: ${wrong}.`);
+      d.policyChanged?.();
+      return { tx: txs[0] };
+    } catch (e) {
+      return json(c, 502, `ENS: ${ensError(e)}. Nothing changed.`);
+    }
+  }
 
   app.post("/api/gateways/:slug/provision", (c) => {
     const a = access(c, c.req.param("slug"), "admin");
@@ -545,6 +559,151 @@ export function buildPlatform(d: PlatformDeps) {
     return c.json({ slug: g.slug, role: invite.role, label: l });
   });
 
+  // ---------- agents and named policies ----------
+  /**
+   * Agents are <label>.agents.<slug>: a name that resolves through agents.<slug> (ENSIP-10 wildcard) to the
+   * gateway's resolver. With no record of its own it reads the default record, linked to policy.<slug>; linked to a
+   * named policy (<p>.policy.<slug>) it reads that one. API keys pick the agent, so the audit shows which ran.
+   */
+  async function agentsReady(g: Gateway): Promise<boolean> {
+    const s = g.ens.state;
+    if (s.agentsReady) return true;
+    if (g.kind !== "user" || g.ens.status !== "live" || !d.provisioner || !s.resolver || !s.registry) return false;
+    const left = await d.provisioner.agentsSetup(s, gatewayNames(g.slug, d.root), g.owner as Address).catch(() => undefined);
+    if (left?.length !== 0) return false;
+    s.agentsReady = true;
+    store.save();
+    return true;
+  }
+  const agentsView = (g: Gateway) => {
+    const n = gatewayNames(g.slug, d.root);
+    return {
+      defaultPolicy: { name: n.policy, policy: g.policy },
+      policies: (g.policies ?? []).map((p) => ({ ...p, name: n.namedPolicy(p.label), agents: (g.agents ?? []).filter((x) => x.policy === p.label).length })),
+      agents: (g.agents ?? []).map((x) => ({ ...x, name: n.agent(x.label), keys: g.keys.filter((k) => k.agent === x.label).length })),
+    };
+  };
+  /** The admin gateway, live on ENS with its resolver, or an error response. */
+  function liveAdmin(c: Context) {
+    const a = access(c, c.req.param("slug")!, "admin");
+    if (a instanceof Response) return a;
+    if (a.g.kind !== "user") return json(c, 403, "the demo gateway's agents are configured by the server");
+    if (a.g.ens.status !== "live" || !a.g.ens.state.resolver || !d.provisioner) return json(c, 409, "wait until the gateway is live on ENS");
+    return a;
+  }
+
+  app.get("/api/gateways/:slug/agents", async (c) => {
+    const a = access(c, c.req.param("slug"));
+    if (a instanceof Response) return a;
+    return c.json({ ready: await agentsReady(a.g), ...agentsView(a.g) });
+  });
+
+  /** One-time ENS setup for gateways built before agents existed; the owner's wallet signs it. */
+  app.post("/api/gateways/:slug/agents/setup", async (c) => {
+    const a = liveAdmin(c);
+    if (a instanceof Response) return a;
+    const { g } = a;
+    if (await agentsReady(g)) return c.json({ ok: true });
+    const txs = txsOf((await c.req.json().catch(() => ({}))) as Record<string, any>);
+    const n = gatewayNames(g.slug, d.root);
+    try {
+      if (!txs.length) {
+        if (!(await d.provisioner!.canSetUpAgents(g.ens.state, a.address as Address))) return json(c, 403, notOwner(g));
+        return c.json({ sign: await d.provisioner!.agentsSetup(g.ens.state, n, g.owner as Address) }, 202);
+      }
+      const wrong = await d.provisioner!.checkAgentsSetup(g.ens.state, n, g.owner as Address, txs);
+      if (wrong) return json(c, 409, `Not ready yet: ${wrong}.`);
+    } catch (e) {
+      return json(c, 502, `ENS: ${ensError(e)}`);
+    }
+    g.ens.state.agentsReady = true;
+    store.save();
+    return c.json({ ok: true });
+  });
+
+  app.put("/api/gateways/:slug/policies/:label", async (c) => {
+    const a = liveAdmin(c);
+    if (a instanceof Response) return a;
+    const { g } = a;
+    const label = c.req.param("label");
+    if (!LABEL_RE.test(label)) return json(c, 400, "policy name: lowercase letters, digits and hyphens");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
+    const prev = (g.policies ?? []).find((p) => p.label === label);
+    if (!prev && (g.policies ?? []).length >= 20) return json(c, 403, "20 policies per gateway");
+    const policy = readPolicy(body.policy, prev?.policy);
+    if ("error" in policy) return json(c, 400, policy.error);
+    const w = await writeRecords(c, g, a.address, [{ name: gatewayNames(g.slug, d.root).namedPolicy(label), records: policyRecords(g, d.root, policy) }], txsOf(body));
+    if (w instanceof Response) return w;
+    if (prev) prev.policy = policy;
+    else (g.policies ??= []).push({ label, policy, createdAt: Date.now() });
+    store.save();
+    return c.json({ ok: true, tx: w.tx, ...agentsView(g) });
+  });
+
+  app.delete("/api/gateways/:slug/policies/:label", (c) => {
+    const a = access(c, c.req.param("slug"), "admin");
+    if (a instanceof Response) return a;
+    const { g } = a;
+    const label = c.req.param("label");
+    const users = (g.agents ?? []).filter((x) => x.policy === label);
+    if (users.length) return json(c, 409, `${users.map((x) => x.label).join(", ")} still use this policy; move them first`);
+    // Its records stay on ENS, unused: nothing links to them any more.
+    g.policies = (g.policies ?? []).filter((p) => p.label !== label);
+    store.save();
+    return c.json({ ok: true, ...agentsView(g) });
+  });
+
+  /** Create an agent or change its policy. Pointing it at a named policy (or back) is a link the owner signs. */
+  app.put("/api/gateways/:slug/agents/:label", async (c) => {
+    const a = liveAdmin(c);
+    if (a instanceof Response) return a;
+    const { g } = a;
+    const label = c.req.param("label");
+    if (!LABEL_RE.test(label)) return json(c, 400, "agent name: lowercase letters, digits and hyphens");
+    if (!(await agentsReady(g))) return json(c, 409, "set up agents on ENS first");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
+    const policy = body.policy ? String(body.policy) : undefined;
+    if (policy && !(g.policies ?? []).some((p) => p.label === policy)) return json(c, 400, `no policy "${policy}" in this gateway`);
+    const prev = (g.agents ?? []).find((x) => x.label === label);
+    if (!prev && (g.agents ?? []).length >= 50) return json(c, 403, "50 agents per gateway");
+    const n = gatewayNames(g.slug, d.root);
+    const [agentName, policyName] = [n.agent(label), policy ? n.namedPolicy(policy) : null];
+    const txs = txsOf(body);
+    try {
+      if (!txs.length) {
+        // Asked of the chain, not our store: a name reused after a delete may still carry an old link.
+        const tx = await d.provisioner!.agentLinkTx(g.ens.state.resolver!, agentName, policyName);
+        if (tx) {
+          if (!(await d.provisioner!.canLink(g.ens.state.resolver!, a.address as Address))) return json(c, 403, notOwner(g));
+          return c.json({ sign: [tx] }, 202);
+        }
+      } else {
+        const wrong = await d.provisioner!.checkAgentLink(g.ens.state.resolver!, agentName, policyName, txs[0]);
+        if (wrong) return json(c, 409, `Nothing changed: ${wrong}.`);
+        d.policyChanged?.();
+      }
+    } catch (e) {
+      return json(c, 502, `ENS: ${ensError(e)}`);
+    }
+    if (prev) prev.policy = policy;
+    else (g.agents ??= []).push({ label, policy, createdAt: Date.now() });
+    store.save();
+    return c.json({ ok: true, tx: txs[0], ...agentsView(g) });
+  });
+
+  app.delete("/api/gateways/:slug/agents/:label", (c) => {
+    const a = access(c, c.req.param("slug"), "admin");
+    if (a instanceof Response) return a;
+    const { g } = a;
+    const label = c.req.param("label");
+    const keys = g.keys.filter((k) => k.agent === label).length;
+    if (keys) return json(c, 409, `${keys} API key${keys === 1 ? "" : "s"} run as this agent; delete ${keys === 1 ? "it" : "them"} first`);
+    // An ENS link it had stays; recreating the agent reads the chain and re-links as needed.
+    g.agents = (g.agents ?? []).filter((x) => x.label !== label);
+    store.save();
+    return c.json({ ok: true, ...agentsView(g) });
+  });
+
   // ---------- API keys ----------
   app.get("/api/gateways/:slug/keys", (c) => {
     const a = access(c, c.req.param("slug"));
@@ -557,10 +716,11 @@ export function buildPlatform(d: PlatformDeps) {
     const a = access(c, c.req.param("slug"));
     if (a instanceof Response) return a;
     if (a.g.kind === "demo") return json(c, 403, "the shared demo is for the Playground; create your own gateway to connect agents");
-    const { name } = (await c.req.json().catch(() => ({}))) as { name?: string };
+    const { name, agent } = (await c.req.json().catch(() => ({}))) as { name?: string; agent?: string };
     const n = String(name ?? "").trim().slice(0, 40) || "agent";
+    if (agent && !(a.g.agents ?? []).some((x) => x.label === agent)) return json(c, 400, `no agent "${agent}" in this gateway`);
     if (a.g.keys.filter((k) => k.member === a.m.address).length >= 20) return json(c, 403, "20 keys per member; delete one first");
-    const { key, secret } = store.createKey(a.g, a.m.address, n);
+    const { key, secret } = store.createKey(a.g, a.m.address, n, agent || undefined);
     const { hash, ...rest } = key;
     return c.json({ ...rest, secret }, 201);
   });
@@ -578,10 +738,11 @@ export function buildPlatform(d: PlatformDeps) {
   // ---------- into a gateway ----------
   /**
    * Forward to the gateway's API with the caller's identity set by us: whatever a client claims in
-   * x-airlock-user / x-airlock-requester-id is replaced. User gateways also drop x-airlock-agent, so a key can
-   * only ever run under its own gateway's ENS policy.
+   * x-airlock-user / x-airlock-requester-id is replaced. On user gateways x-airlock-agent is ours too: an API key
+   * runs as the agent it was made for (`o.agent`: its label, or null for the gateway default), and the Console may
+   * pick among this gateway's own agents. Nothing can name another gateway's policy.
    */
-  async function forward(c: Context, g: Gateway, m: Member, path: string, o: { body?: unknown; query?: Record<string, string> } = {}) {
+  async function forward(c: Context, g: Gateway, m: Member, path: string, o: { body?: unknown; query?: Record<string, string>; agent?: string | null } = {}) {
     if (path === "/v1/chat/completions") {
       const wait = limit(`${g.id}|${m.address}`, g.kind === "demo" ? L.demoChatPerHour : L.chatPerHour);
       if (wait) return c.json({ error: { message: `rate limit: too many requests this hour; try again in ${wait} min`, type: "rate_limit_error" } }, 429);
@@ -596,7 +757,11 @@ export function buildPlatform(d: PlatformDeps) {
     headers.delete("cookie");
     headers.delete("x-airlock-requester-id");
     if (g.kind === "user") {
-      headers.delete("x-airlock-agent");
+      const n = gatewayNames(g.slug, d.root);
+      const own = new Set((g.agents ?? []).map((x) => n.agent(x.label)));
+      const asked = headers.get("x-airlock-agent") ?? "";
+      const agent = o.agent !== undefined ? (o.agent && own.has(n.agent(o.agent)) ? n.agent(o.agent) : n.policy) : own.has(asked) ? asked : n.policy;
+      headers.set("x-airlock-agent", agent);
       headers.set("x-airlock-user", encodeURIComponent(m.label));
     } else if (!headers.get("x-airlock-user")) headers.set("x-airlock-user", encodeURIComponent(m.label));
     headers.set("x-airlock-requester-id", m.address);
@@ -619,7 +784,7 @@ export function buildPlatform(d: PlatformDeps) {
     if (!hit) return c.json({ error: { message: "missing or invalid Airlock API key (create one on the Connect page)", type: "authentication_error" } }, 401);
     const path = new URL(c.req.url).pathname;
     if (!needFor(c.req.method, path)) return c.json({ error: { message: "not found", type: "invalid_request_error" } }, 404);
-    return forward(c, hit.g, hit.member, path);
+    return forward(c, hit.g, hit.member, path, { agent: hit.key.agent ?? null });
   });
 
   // The Console: /g/<slug>/… with the session cookie, checked against the member's role.

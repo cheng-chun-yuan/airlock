@@ -64,8 +64,8 @@ function setup() {
     assert.equal(v.status, 200, await v.clone().text());
     cookies[name] = v.headers.get("set-cookie")!.split(";")[0];
   }
-  const as = (name: string) => async (method: string, path: string, body?: unknown) => {
-    const r = await app.request(path, { method, headers: { host: "localhost", cookie: cookies[name] ?? "", "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const as = (name: string) => async (method: string, path: string, body?: unknown, extra: Record<string, string> = {}) => {
+    const r = await app.request(path, { method, headers: { host: "localhost", cookie: cookies[name] ?? "", "content-type": "application/json", ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
     return { status: r.status, j: (await r.json().catch(() => null)) as any };
   };
   return { app, store, gw, people, login, as, tenants: fake };
@@ -156,7 +156,20 @@ test("API keys: pick the gateway and member; die with the membership", async () 
     app.request("/v1/chat/completions", { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json", ...h }, body: "{}" });
   assert.equal((await call("alk_nope")).status, 401);
   const ok = (await (await call(k.j.secret, { "x-airlock-user": "ceo", "x-airlock-agent": "contract-agent.agents.airlock.eth", "x-airlock-requester-id": "0xdead" })).json()) as any;
-  assert.deepEqual([ok.user, ok.requesterId, ok.agent], ["eve", people.eve.address.toLowerCase(), null]);
+  assert.deepEqual([ok.user, ok.requesterId, ok.agent], ["eve", people.eve.address.toLowerCase(), "policy.acme.airlock.eth"], "a key without an agent runs under the gateway policy");
+  // A key made for an agent runs as that agent, whatever the client claims; only this gateway's agents exist.
+  assert.equal((await as("eve")("POST", "/api/gateways/acme/keys", { name: "x", agent: "intern-bot" })).status, 400);
+  gw.agents = [{ label: "intern-bot", createdAt: 0 }];
+  store.save();
+  const kb = await as("eve")("POST", "/api/gateways/acme/keys", { name: "intern", agent: "intern-bot" });
+  assert.equal(kb.j.agent, "intern-bot");
+  const asBot = (await (await call(kb.j.secret, { "x-airlock-agent": "policy.other.airlock.eth" })).json()) as any;
+  assert.equal(asBot.agent, "intern-bot.agents.acme.airlock.eth");
+  assert.equal((await as("owner")("DELETE", "/api/gateways/acme/agents/intern-bot")).status, 409, "an agent with keys can't be deleted");
+  // The Console may pick among the gateway's own agents, and nothing else.
+  const pick = (agent: string) => as("eve")("POST", "/g/acme/v1/chat/completions", { model: "m", messages: [] }, { "x-airlock-agent": agent }).then((r) => r.j.agent);
+  assert.equal(await pick("intern-bot.agents.acme.airlock.eth"), "intern-bot.agents.acme.airlock.eth");
+  assert.equal(await pick("contract-agent.agents.airlock.eth"), "policy.acme.airlock.eth");
   assert.equal((await app.request("/v1/admin/revoke", { method: "POST", headers: { authorization: `Bearer ${k.j.secret}` } })).status, 404, "keys only reach the model routes");
   await as("owner")("DELETE", `/api/gateways/acme/members/${people.eve.address.toLowerCase()}`);
   assert.equal((await call(k.j.secret)).status, 401);

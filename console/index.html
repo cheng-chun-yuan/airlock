@@ -535,7 +535,7 @@
   <section id="tab-connect" hidden>
     <div class="ledger-head"><div><p class="eyebrow">Connect</p><h2>Point your agents at Airlock</h2><p class="muted" style="margin:4px 0 0">Airlock speaks the OpenAI API. Change the base URL, use your own key, keep your client.</p></div></div>
     <div class="panel" style="margin-bottom:16px"><h3>Your API keys</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">One key per agent or app. Requests made with a key are sent as you, and you can withdraw them. Keys stop working if you leave the gateway.</p>
-      <div class="inline"><input class="field" id="keyName" placeholder="Name, e.g. librechat" maxlength="40" /><button class="btn dark" id="keyCreate">Create key</button></div>
+      <div class="inline"><input class="field" id="keyName" placeholder="Name, e.g. librechat" maxlength="40" /><select class="field" id="keyAgent" title="The agent this key runs as: its ENS name picks the policy" hidden></select><button class="btn dark" id="keyCreate">Create key</button></div>
       <div id="keyNew"></div><div id="keyList" style="margin-top:12px"></div></div>
     <div class="ens-grid" id="connectBody"></div>
   </section>
@@ -550,6 +550,7 @@
       <div class="inline"><button class="btn" type="button" id="setTest">Test connections</button><button class="btn dark big" id="setSave">Save</button></div>
       <div id="setTestOut"></div><div class="err" id="setErr"></div><div class="ok-note" id="setOk"></div>
     </form>
+    <div class="form" id="setAgents" style="margin-top:18px"></div>
   </section>
 </main>
 </div>
@@ -917,7 +918,7 @@ async function loadEns() {
   $("#ensSub").innerHTML = `resolver ${s.resolver ? scan(s.resolver) : "—"}${s.approverRegistry ? ` · approver registry ${scan(s.approverRegistry)}` : ""}`;
   const writer = (k) => { const w = s.access.filter((a) => a.canWrite[k]).map((a) => a.label); return `<span style="display:flex; gap:4px; justify-content:flex-end">${w.length ? w.map((l) => `<span class="wr ${l === "security" ? "sec" : "gw"}">${l}</span>`).join("") : `<span class="wr">nobody</span>`}</span>`; };
   $("#ensAgents").innerHTML = `<table class="matrix"><tr><th>agent</th><th>policy comes from</th><th>record</th><th>maxClass</th><th>egress</th><th>high-risk quorum</th></tr>` +
-    (s.agents ?? []).map((a) => `<tr><td>${ensApp(a.name)}</td><td style="text-align:left">${a.source.startsWith("linked") ? `🔗 linked → ${ensApp(s.sharedPolicy)}` : a.source.startsWith("org default") ? "✳︎ org default (wildcard · not registered)" : esc(a.source)}</td><td class="mono">#${esc(a.recordId)}</td><td>${esc(a.maxClass ?? "—")}</td><td>${esc(a.egress ?? "—")}</td><td>${esc(a.quorum ?? "1")}</td></tr>`).join("") + "</table>";
+    (s.agents ?? []).map((a) => `<tr><td>${ensApp(a.name)}</td><td style="text-align:left">${a.linkedTo ? `🔗 linked → ${ensApp(a.linkedTo)}` : a.source.startsWith("org default") ? `✳︎ ${isDemo() ? "org" : "gateway"} default (wildcard · not registered)` : esc(a.source)}</td><td class="mono">#${esc(a.recordId)}</td><td>${esc(a.maxClass ?? "—")}</td><td>${esc(a.egress ?? "—")}</td><td>${esc(a.quorum ?? "1")}</td></tr>`).join("") + "</table>";
   $("#ensPolicy").innerHTML = `<div class="rec"><span class="k">agent</span><span class="v">${ensApp(s.agent)}${s.sharedPolicy && (s.agents ?? []).some((a) => a.name === s.agent && a.source.startsWith("linked")) ? `<br><span class="muted" style="font-size:12px">🔗 linked → ${ensApp(s.sharedPolicy)} (shared record)</span>` : ""}</span><span></span></div>` +
     Object.entries(s.policy).map(([k, v]) => `<div class="rec"><span class="k">${esc(k.replace("airlock.", ""))}<br><span class="hint">${esc(POLICY_HINT[k] ?? "")}</span></span><span class="v">${v ? esc(v) : '<span class="muted">— (fail-closed)</span>'}</span>${writer(k)}</div>`).join("");
   const a = s.audit;
@@ -1020,7 +1021,7 @@ async function demoSend(text, history) {
   let answer = "";
   try {
     const headers = { "content-type":"application/json", "x-airlock-session":demo.session };
-    if (isDemo()) headers["x-airlock-agent"] = $("#demoAgent").value;
+    if (!$("#demoAgent").hidden) headers["x-airlock-agent"] = $("#demoAgent").value;
     if ($("#demoWhy").value.trim()) headers["x-airlock-justification"] = encodeURIComponent($("#demoWhy").value.trim());
     const res = await fetch(api("/v1/chat/completions"), { method:"POST", headers, body:JSON.stringify({ model:`airlock/${cfg.defaultClaudeModel}`, stream:true, messages }) });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
@@ -1262,12 +1263,12 @@ async function enterGateway(slug) {
   $("#gwSwitch").onchange = (e) => (location.href = e.target.value === "+" ? "/console#new" : e.target.value ? `/console/${e.target.value}` : "/console");
   $("#tabSettings").hidden = cfg.me?.role !== "admin" || isDemo();
   $("#pgWho").textContent = `${cfg.me?.label ?? "you"}${cfg.me?.role ? ` (${cfg.me.role})` : ""}`;
-  $("#demoAgent").hidden = !isDemo();
+  $("#demoAgent").hidden = !isDemo() && !(cfg.agents ?? []).length;
   $("#apDemo").hidden = !isDemo(); $("#teamBody").hidden = isDemo();
-  $("#ensAgentsPanel").hidden = !isDemo(); // one policy per gateway: nothing to compare
+  $("#ensAgentsPanel").hidden = !isDemo() && !(cfg.agents ?? []).length; // one policy and no agents: nothing to compare
   $("#ens-eyebrow") && ($("#ens-eyebrow").textContent = isDemo() ? "Agents & policy · ENSv2 · read live" : "Policy · ENSv2 · read live");
   paintBanner();
-  const agents = isDemo() ? [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")] : [cfg.defaultAgent];
+  const agents = isDemo() ? [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")] : [cfg.defaultAgent, ...(cfg.agents ?? []).map((a) => a.name)];
   $("#demoAgent").innerHTML = agents.map((a) => `<option value="${esc(a)}">${esc(short(a))}</option>`).join("");
   $("#pgExample").innerHTML = `<option value="">Examples…</option>` + EXAMPLES.map((x, i) => `<option value="${i}">${esc(x.label)}</option>`).join("");
   newConversation();
@@ -1631,13 +1632,16 @@ async function loadKeys() {
   if (isDemo()) { panel.innerHTML = `<h3>API keys</h3><p class="muted" style="margin:0; font-size:13.5px">The shared demo is for the Playground. To connect your own agents, <a href="/console#new">create a gateway</a>: your models, your team, your keys.</p>`; return; }
   const list = await j(`/api/gateways/${GW}/keys`);
   const admin = cfg.me.role === "admin" && !isDemo();
-  $("#keyList").innerHTML = Array.isArray(list) && list.length ? `<table class="matrix"><tr><th>name</th><th>key</th>${admin ? "<th>member</th>" : ""}<th>created</th><th>last used</th><th></th></tr>` +
-    list.map((k) => `<tr><td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}…</td>${admin ? `<td>${esc(k.memberLabel)}${k.mine ? " (you)" : ""}</td>` : ""}<td>${ago(k.createdAt)}</td><td>${k.lastUsedAt ? ago(k.lastUsedAt) : "never"}</td><td><button class="linkish" data-delkey="${esc(k.id)}">delete</button></td></tr>`).join("") + "</table>"
+  const agents = cfg.agents ?? [];
+  $("#keyAgent").hidden = !agents.length;
+  $("#keyAgent").innerHTML = `<option value="">runs as: gateway default</option>` + agents.map((a) => `<option value="${esc(a.label)}">runs as: ${esc(a.label)}</option>`).join("");
+  $("#keyList").innerHTML = Array.isArray(list) && list.length ? `<table class="matrix"><tr><th>name</th><th>key</th><th>agent</th>${admin ? "<th>member</th>" : ""}<th>created</th><th>last used</th><th></th></tr>` +
+    list.map((k) => `<tr><td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}…</td><td>${k.agent ? esc(k.agent) : '<span class="muted">default</span>'}</td>${admin ? `<td>${esc(k.memberLabel)}${k.mine ? " (you)" : ""}</td>` : ""}<td>${ago(k.createdAt)}</td><td>${k.lastUsedAt ? ago(k.lastUsedAt) : "never"}</td><td><button class="linkish" data-delkey="${esc(k.id)}">delete</button></td></tr>`).join("") + "</table>"
     : `<div class="muted" style="font-size:13px">No keys yet.</div>`;
   $$("[data-delkey]").forEach((b) => (b.onclick = async () => { if (!confirm("Delete this key? Agents using it stop working.")) return; await send("DELETE", `/api/gateways/${GW}/keys/${b.dataset.delkey}`); loadKeys(); }));
 }
 $("#keyCreate").onclick = async () => {
-  const d = await post(`/api/gateways/${GW}/keys`, { name:$("#keyName").value.trim() });
+  const d = await post(`/api/gateways/${GW}/keys`, { name:$("#keyName").value.trim(), agent:$("#keyAgent").value || undefined });
   if (d.error) { $("#keyNew").innerHTML = `<div class="err">${esc(d.error)}</div>`; return; }
   $("#keyName").value = "";
   $("#keyNew").innerHTML = `<div class="secret">${esc(d.secret)}</div><div class="inline" style="margin-top:6px"><button class="copy" data-copy="${esc(d.secret)}">copy</button><span class="muted" style="font-size:12.5px">Shown once. Store it in your agent's config now.</span></div>`;
@@ -1671,6 +1675,102 @@ async function sendFromWallet({ to, data, chainId }) {
   return window.ethereum.request({ method:"eth_sendTransaction", params:[{ from, to, data }] });
 }
 
+/**
+ * Call an API that may answer { sign: [tx…] } (an ENS change only the owner's wallet may make): the wallet sends
+ * each transaction, then the call repeats with their hashes so the server can check what landed.
+ */
+async function viaWallet(method, url, body, status = () => {}) {
+  const d = await send(method, url, body);
+  if (!d.sign) return d;
+  try {
+    const txs = [];
+    for (const [i, tx] of d.sign.entries()) {
+      status(d.sign.length > 1 ? `Confirm in your wallet (${i + 1}/${d.sign.length})…` : "Confirm in your wallet…");
+      txs.push(await sendFromWallet(tx));
+    }
+    status("Waiting for Sepolia…");
+    return await send(method, url, { ...body, txs });
+  } catch (err) {
+    return { error: err.code === 4001 ? "You rejected the transaction. Nothing changed." : `Wallet: ${err.message}` };
+  }
+}
+
+/* Agents: <agent>.agents.<slug> names. Each follows the gateway policy (ENS wildcard) or is linked to a named policy. */
+async function loadAgents() {
+  const el = $("#setAgents");
+  const A = await j(`/api/gateways/${GW}/agents`);
+  if (A.error) { el.innerHTML = ""; return; }
+  const note = (html) => `<p class="muted" style="margin:-4px 0 10px; font-size:13px">${html}</p>`;
+  if (!A.ready) {
+    el.innerHTML = `<fieldset class="fs"><legend>Agents</legend>${note(`Give each agent its own ENS name, <span class="mono">&lt;agent&gt;.agents.${esc(cfg.org)}</span>, so API keys run as it and the audit shows which one sent what. This gateway was created before agents existed: its owner's wallet signs a one-time ENS setup (up to two Sepolia transactions).`)}
+      <div class="inline"><button class="btn dark" type="button" id="agSetup">Set up agents on ENS</button></div><div class="err" id="agErr"></div></fieldset>`;
+    $("#agSetup").onclick = async () => {
+      const b = $("#agSetup"); b.disabled = true;
+      const d = await viaWallet("POST", `/api/gateways/${GW}/agents/setup`, {}, (t) => (b.textContent = t));
+      b.disabled = false; b.textContent = "Set up agents on ENS";
+      if (d.error) { $("#agErr").textContent = d.error; return; }
+      loadAgents();
+    };
+    return;
+  }
+  const policyLabel = (p) => (p ? p : "gateway default");
+  const polRows = A.policies.map((p) => `<tr><td>${ensApp(p.name)}</td><td>${esc(p.policy.maxClass)}</td><td>${esc(p.policy.egress)}</td><td>${esc(p.policy.highRiskQuorum)}</td><td>${p.agents}</td><td><button class="linkish" type="button" data-edpol="${esc(p.label)}">edit</button> <button class="linkish" type="button" data-delpol="${esc(p.label)}">delete</button></td></tr>`).join("");
+  const agRows = A.agents.map((a) => `<tr><td>${ensApp(a.name)}</td><td><select class="field" data-agpol="${esc(a.label)}">${[null, ...A.policies.map((p) => p.label)].map((p) => `<option value="${esc(p ?? "")}" ${(a.policy ?? null) === p ? "selected" : ""}>${esc(policyLabel(p))}</option>`).join("")}</select></td><td>${a.keys}</td><td><button class="linkish" type="button" data-delag="${esc(a.label)}">delete</button></td></tr>`).join("");
+  el.innerHTML = `<fieldset class="fs"><legend>Agents</legend>
+    ${note(`An API key runs as one agent, and its ENS name picks the policy. A new agent follows the gateway policy through the ENS wildcard: nothing to sign. Pointing one at a named policy is an ENS link your wallet signs; edit that policy once and every linked agent follows.`)}
+    ${A.agents.length ? `<table class="matrix"><tr><th>agent</th><th>policy</th><th>keys</th><th></th></tr>${agRows}</table>` : `<div class="muted" style="font-size:13px">No agents yet. Keys without one run under ${ensApp(A.defaultPolicy.name)}.</div>`}
+    <div class="inline" style="margin-top:10px"><input class="field" id="agLabel" placeholder="agent name, e.g. intern-bot" maxlength="32" /><select class="field" id="agPolicy">${[null, ...A.policies.map((p) => p.label)].map((p) => `<option value="${esc(p ?? "")}">${esc(policyLabel(p))}</option>`).join("")}</select><button class="btn" type="button" id="agAdd">Add agent</button></div>
+    <div class="err" id="agErr"></div>
+  </fieldset>
+  <fieldset class="fs"><legend>Named policies</legend>
+    ${note(`Besides the gateway policy above, stricter (or looser) policies agents can be linked to. Each is its own ENS record, <span class="mono">&lt;name&gt;.policy.${esc(cfg.org)}</span>; your wallet signs every change.`)}
+    ${A.policies.length ? `<table class="matrix"><tr><th>policy</th><th>maxClass</th><th>egress</th><th>quorum</th><th>agents</th><th></th></tr>${polRows}</table>` : ""}
+    <form id="polForm" style="margin-top:10px"><label class="f"><span>Policy name</span><input class="field" name="label" placeholder="strict" maxlength="32" required /></label><div id="polFields"></div>
+      <div class="inline"><button class="btn" id="polSave">Save policy</button></div><div class="err" id="polErr"></div></form>
+  </fieldset>`;
+  const polForm = $("#polForm");
+  const editPol = (p) => { polForm.label.value = p?.label ?? ""; polForm.label.readOnly = !!p; $("#polFields").innerHTML = policyForm(p?.policy ?? { maxClass:"internal", egress:"approval", highRiskQuorum:2 }); };
+  editPol(null);
+  $$("[data-edpol]", el).forEach((b) => (b.onclick = () => { editPol(A.policies.find((p) => p.label === b.dataset.edpol)); polForm.scrollIntoView({ block:"center" }); }));
+  $$("[data-delpol]", el).forEach((b) => (b.onclick = async () => {
+    if (!confirm(`Delete the policy "${b.dataset.delpol}"? Its ENS records stay, unused.`)) return;
+    const d = await send("DELETE", `/api/gateways/${GW}/policies/${b.dataset.delpol}`);
+    if (d.error) { $("#polErr").textContent = d.error; return; }
+    loadAgents();
+  }));
+  polForm.onsubmit = async (e) => {
+    e.preventDefault(); $("#polErr").textContent = "";
+    const btn = $("#polSave"); btn.disabled = true;
+    const { policy } = readSettings(polForm);
+    const d = await viaWallet("PUT", `/api/gateways/${GW}/policies/${encodeURIComponent(polForm.label.value.trim().toLowerCase())}`, { policy }, (t) => (btn.textContent = t));
+    btn.disabled = false; btn.textContent = "Save policy";
+    if (d.error) { $("#polErr").textContent = d.error; return; }
+    toast("POLICY SAVED", d.tx ? `tx ${d.tx.slice(0, 14)}…` : "");
+    loadAgents();
+  };
+  const putAgent = async (label, policy, status) => {
+    $("#agErr").textContent = "";
+    const d = await viaWallet("PUT", `/api/gateways/${GW}/agents/${encodeURIComponent(label)}`, { policy: policy || null }, status);
+    if (d.error) { $("#agErr").textContent = d.error; return false; }
+    cfg = await j("/config");
+    return true;
+  };
+  $("#agAdd").onclick = async () => {
+    const b = $("#agAdd"); b.disabled = true;
+    const ok = await putAgent($("#agLabel").value.trim().toLowerCase(), $("#agPolicy").value, (t) => (b.textContent = t));
+    b.disabled = false; b.textContent = "Add agent";
+    if (ok) loadAgents();
+  };
+  $$("[data-agpol]", el).forEach((s) => (s.onchange = async () => { s.disabled = true; await putAgent(s.dataset.agpol, s.value, () => {}); loadAgents(); }));
+  $$("[data-delag]", el).forEach((b) => (b.onclick = async () => {
+    if (!confirm(`Delete the agent "${b.dataset.delag}"?`)) return;
+    const d = await send("DELETE", `/api/gateways/${GW}/agents/${b.dataset.delag}`);
+    if (d.error) { $("#agErr").textContent = d.error; return; }
+    cfg = await j("/config");
+    loadAgents();
+  }));
+}
+
 async function loadSettings() {
   const g = await j(`/api/gateways/${GW}`);
   if (!g.settings?.local) return;
@@ -1680,6 +1780,7 @@ async function loadSettings() {
   form.name.value = g.name;
   $("#setModels").innerHTML = modelsForm(g.settings); $("#setPolicy").innerHTML = policyForm(g.settings.policy);
   wireModels(form);
+  loadAgents();
   $("#setErr").textContent = ""; $("#setOk").textContent = ""; $("#setTestOut").innerHTML = "";
   $("#setTest").onclick = () => testModels(form, $("#setTestOut"), GW);
   $("#setPolicyNote").innerHTML = g.policySigner === "owner"
@@ -1688,18 +1789,7 @@ async function loadSettings() {
   form.onsubmit = async (e) => {
     e.preventDefault(); $("#setErr").textContent = ""; $("#setOk").textContent = "";
     const btn = $("#setSave"); btn.disabled = true; btn.textContent = "Saving…";
-    const body = { name:form.name.value.trim(), ...readSettings(form) };
-    let d = await send("PATCH", `/api/gateways/${GW}`, body);
-    if (d.sign) {
-      try {
-        btn.textContent = "Confirm in your wallet…";
-        const policyTx = await sendFromWallet(d.sign);
-        btn.textContent = "Waiting for Sepolia…";
-        d = await send("PATCH", `/api/gateways/${GW}`, { ...body, policyTx });
-      } catch (err) {
-        d = { error: err.code === 4001 ? "You rejected the transaction. Nothing changed." : `Wallet: ${err.message}` };
-      }
-    }
+    const d = await viaWallet("PATCH", `/api/gateways/${GW}`, { name:form.name.value.trim(), ...readSettings(form) }, (t) => (btn.textContent = t));
     btn.disabled = false; btn.textContent = "Save";
     if (d.error) { $("#setErr").textContent = d.error; return; }
     $("#setOk").innerHTML = `Saved.${d.tx ? ` Policy written to ENS: <a target="_blank" href="https://sepolia.etherscan.io/tx/${esc(d.tx)}">tx ↗</a>` : ""}`;
