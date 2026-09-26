@@ -37,7 +37,7 @@ claude mcp add worldcoin-developer-portal https://developer.world.org/api/mcp --
    ```
 5. **Restart.** The Console header shows `world id worldid`.
 6. **Enroll.** Console → **Enroll** → type an ENS name → scan the QR code. Without a phone, use the **World ID simulator**: paste the link at <https://simulator.worldcoin.org>, or have an agent call `complete_test_request {connect_url}` on the simulator MCP (`https://simulator.worldcoin.org/api/mcp`, no key).
-7. **Approve.** Queue → type the same ENS name → hold **open outer door** → scan.
+7. **Approve.** Approvals → your ENS name (pre-filled from your profile) → hold the button → verify with World ID.
 
 ### Notes
 - **Proof type:** the default is native **World ID 4.0 Proof of Human** (`proofOfHuman`, `min_protocol_version: "4.0"`), which is what the simulator supports. `WORLD_PROOF=legacy` switches to v3 Orb proofs. For apps not migrated to 4.0, those fall back to `/api/v2/verify`, where the action must already exist in the portal.

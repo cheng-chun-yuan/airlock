@@ -29,7 +29,7 @@
 
 **Links:**
 - GitHub: https://github.com/cheng-chun-yuan/airlock
-- Live demo: https://soil-foods-jam-conflicts.trycloudflare.com/console?token=<AIRLOCK_ACCESS_TOKEN>. Put the real token in the form, not in git. Rotate it after judging.
+- Live: https://airlock.polyoctant.com/?token=<AIRLOCK_ACCESS_TOKEN>. Put the real token in the form, not in git. Rotate it after judging.
 - ENS: https://app.ens.dev/airlock.eth
 
 ## Tracks
@@ -38,7 +38,7 @@
 | Requirement | Where |
 |---|---|
 | Official World ID for Agents on the event dev environment | `sandbox.auth.world.org` OIDC ([approval/src/oidc.ts](../approval/src/oidc.ts)) |
-| Full journey: request → user completes → validated → protected action | Queue → *World ID for Agents* → hold → World → `/oidc/callback` → egress. Verified against the real sandbox |
+| Full journey: request → user completes → validated → protected action | Approvals → *World ID for Agents* → hold → World → `/oidc/callback` → egress. Verified against the real sandbox |
 | Denied / cancelled / expired path where the action doesn't happen | cancel (`access_denied`), timeout, no role, revoked role, replayed callback; all audited, nothing sent |
 | Secure backend validation, no client secrets | token exchange + JWKS verification in the gateway; the secret lives only in `.env` |
 | Integration debrief | README → *Integration debrief* |
@@ -48,34 +48,34 @@
 |---|---|
 | Built on ENSv2 (Sepolia) | `airlock.eth`; contracts and txs in the README |
 | ENSv2 central, not cosmetic | policy engine (agent records), role registry (subname under role, expiry, unregister = revoke), EAC write split, audit anchor |
-| Functional, not hardcoded | every request reads ENS live; the Console's ENS tab reads it live; changing `airlock.models` on-chain changes behaviour |
-| Live demo link | tunnel URL above |
+| Functional, not hardcoded | every request reads ENS live; the Console's Agents page reads it live; changing `airlock.models` on-chain changes behaviour |
+| Live link | https://airlock.polyoctant.com |
 | Open source | GitHub |
 | Bonus: AI agents | each agent *is* an ENS name whose records are its egress policy |
 
-## Demo video (≈3 min): follow the **Demo** tab
+## Demo video (≈3 min): walk the product
 
-Open the live demo. The Console lands on **Demo**: a 6-scene stepper on top, the **Agent** conversation on the left and the **Airlock** (chamber + approval) on the right. For each scene, press **Run scene ▸**, then **Next →**. Everything is one screen, and World ID opens in a popup so the agent's stream keeps running.
+Two browser windows side by side: the **requester** on Playground, the **approver** on Approvals (each with its own profile). World ID opens in a popup, so the agent's stream keeps running.
 
-| Time | Scene | Do | Say |
+| Time | Page | Do | Say |
 |---|---|---|---|
-| 0:00 | (title) | Show the Demo tab (7 scenes) | "Agents leak data the moment they call a frontier model. Airlock is the airlock between them, and it's also an ENS-governed, human-approved gateway." |
-| 0:15 | **01 Public** | Run | "Nothing sensitive, so it's sent automatically. Every decision is still audited." (Airlock: *Sent automatically*) |
-| 0:30 | **02 Confidential** | Run → point at the **De-identified** box → flip to **As the model sees it** → *World ID for Agents* → **hold** the button | "First we de-identify: names, money and email become labels. I can read them here; the model only ever gets `ORG·1`, `PERSON·1`, and the mapping never leaves the box. The local model already tried to re-identify them and failed, so risk is low. Policy comes from ENS: approval by someone holding `legal.approvers.airlock.eth`. A tap does nothing; I hold to open the outer door." → popup → **CLEARED**, the door opens, the answer streams with real names. |
-| 1:10 | **03 Seal** | Run → **Seal** | "Same request, but I seal it. The frontier model never sees it; the local model answers instead." |
-| 1:25 | **04 Revoked** | **Revoke carol on ENS** (Sepolia tx) → Run → hold | "Carol is a real human. I just unregistered her ENS approver subname. World ID passes, the ENS role check fails, and nothing is sent. Revocation is one on-chain call." |
-| 1:50 | **05 Two humans** | Run → approve as **alice** (World App QR) → try **bob on the same World ID** → approve as **bob** (World ID for Agents) | "TSMC is de-identified but the context gives it away, so risk is high, and our ENS policy says high risk needs **two different humans**. Alice approves: 1 of 2. Now 'bob' approves with the *same* World ID, and it's refused: World ID knows it's the same person, without knowing who. A real second human approves, and it goes out. An account system can't do that without KYC." |
-| 2:25 | **06 New agent** | Run (agent: `intern-bot`) | "This agent was never registered. ENSv2 wildcard resolution gives it the org's default policy, internal only, so confidential data is blocked with zero setup. The real agents link to one shared policy record: edit it once and both change." |
-| 2:40 | **07 Proof** | **Open ENS** (agents table, access matrix) → **Verify chain** → **Anchor to ENS** | "Policy, roles and the audit root all live in ENS. Only the security key can change policy, and every decision is hash-chained and anchored to `audit.airlock.eth`." |
-| 2:50 | (end) | | "Local AI by default. Frontier AI by human consent. Accountability on-chain." |
+| 0:00 | Overview | Show status and today's decisions | "Agents leak data the moment they call a frontier model. Airlock is the airlock between them: local AI by default, frontier AI only with human consent." |
+| 0:15 | Playground | Example *Public question* → Send | "Nothing sensitive, so it's sent automatically, and still audited." |
+| 0:30 | Playground → Approvals | Example *Contract review* → Send; approver: flip **Readable / As the model sees it** → **hold** → World ID for Agents | "Names, money and email become labels. The approver reads them; the model only gets `ORG·1`. The policy comes from the agent's ENS name: legal must approve. Hold, verify with World ID." → CLEARED, answer streams back with real names. |
+| 1:10 | Approvals | Same request again → **Seal** with a note | "Sealed: the frontier model never sees it; the local model answers and the requester sees why." |
+| 1:25 | Approvers | **Revoke** an approver → try to approve as them | "Revocation is one ENS transaction; MultiBaas pushes it to the gateway at once. World ID still passes, the role check fails, nothing is sent." |
+| 1:50 | Playground → Approvals | Example *Client pricing* → approve as approver 1 → same World ID under another name → approver 2 | "The re-identification test catches TSMC, so risk is high and ENS requires two different humans. The same World ID under another name is refused: World ID knows it's the same person without knowing who." |
+| 2:25 | Playground | Agent `intern-bot` → *Contract review* | "An agent nobody registered gets the org default through ENSv2 wildcard resolution: confidential data blocked, zero setup." |
+| 2:40 | Agents → Audit | Linked policy + access matrix → **Verify chain** → **Anchor to ENS** | "Only the security key can change policy. Every decision is hash-chained and anchored to ENS." |
+| 2:50 | | | "Local AI by default. Frontier AI by human consent. Accountability on-chain." |
 
 ## Pre-demo checklist
-- [ ] `docker ps` shows `airlock-tunnel` and `codex-lb` up; `curl localhost:8000/v1/models` (vLLM) answers.
+- [ ] `docker ps` shows `airlock-named-tunnel` and `codex-lb` up; `curl localhost:8000/v1/models` (vLLM) answers.
 - [ ] Gateway up: `npm start` (the Console header says `world id worldid + agents · ens sepolia (read/write)`).
-- [ ] The tunnel URL is unchanged. If it changed, update the OIDC redirect URI in the World portal and `PUBLIC_URL` / `WORLD_OIDC_REDIRECT_URI` in `.env`.
-- [ ] `carol.legal.approvers.airlock.eth` is **live** before scene 04: ENS tab → Approvers → enroll `carol.legal.approvers.airlock.eth` with World ID for Agents (or `npm run ens -- enroll carol.legal.approvers.airlock.eth 0x01`). Scene 04 revokes her, so re-enroll between takes.
+- [ ] The World OIDC client lists `https://airlock.polyoctant.com/oidc/callback` as a redirect URI (matches `WORLD_OIDC_REDIRECT_URI` in `.env`).
+- [ ] At least two approvers are **live** (Approvers page), each enrolled with World ID. A revoked approver comes back only by enrolling again with World ID.
 - [ ] Allow popups for the demo URL (World ID for Agents opens in a popup).
-- [ ] Scene 05 needs **alice and bob** live (the ENS tab's lookup). The "same human" moment needs **World App QR (IDKit)** plus the simulator (simulator.worldcoin.org) and the IDKit staging window.
+- [ ] The two-person rule needs two live approvers. The "same human" moment needs **World App QR (IDKit)** plus the simulator (simulator.worldcoin.org) and the IDKit staging window.
 - [ ] For IDKit only: the staging window is open. It expires 24h after opening; reopen it via the Portal MCP `set_world_id_staging_verification`.
 - [ ] Fresh ledger for recording: stop the gateway, `rm data/audit.jsonl`, start it, then *Anchor now* at the end.
 - [ ] After judging: rotate `AIRLOCK_ACCESS_TOKEN`, the World OIDC client secret, the RP signing key and the Portal team API key.
