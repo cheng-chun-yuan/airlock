@@ -5,7 +5,8 @@ import type { Hex } from "viem";
 import type { PolicyResolver, RoleRegistry } from "@airlock/core";
 import { dictionaryRecognizer, llmRecognizer, LocalAttackScorer, PipelineRedactor, presidioRecognizer, ruleRecognizer, RuleRiskScorer, type Recognizer } from "@airlock/redactor";
 import { ApprovalStore, MockVerifier, WorldIdVerifier, WorldOidc, type ProofVerifier } from "@airlock/approval";
-import { ensClient, EnsInspector, EnsPolicyResolver, EnsRoleRegistry, EnsWriter, StaticPolicyResolver, StaticRoleRegistry } from "@airlock/registry";
+import { describe, ensClient, EnsInspector, EnsPolicyResolver, EnsRoleRegistry, EnsWriter, GATEWAY_KEYS, MultiBaas, parseWebhook, POLICY_KEYS, StaticPolicyResolver, StaticRoleRegistry, toChainEvent, verifyWebhook, type ChainEvent, type NameBook } from "@airlock/registry";
+import { namehash, parseAbi, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { JsonlAuditLog } from "@airlock/audit";
 import { ClaudeModel, LocalModel, OpenAICompatModel, type FrontierModel } from "./llm";
@@ -36,10 +37,11 @@ if (env.REDACT_LLM === "1") recognizers.push(llmRecognizer(ask));
 const redactor = new PipelineRedactor(recognizers, (r, e) => console.warn(`[redactor] ${r} failed: ${(e as Error).message}`));
 
 // Policy + roles: ENS (Sepolia) when SEPOLIA_RPC_URL is set, else local JSON
-let policies: PolicyResolver, roles: RoleRegistry, writer: EnsWriter | undefined, ensMode: string, ens: EnsInspector | undefined;
+let policies: PolicyResolver, roles: RoleRegistry, writer: EnsWriter | undefined, ensMode: string, ens: EnsInspector | undefined, ensRead: PublicClient | undefined;
 const defaultAgentName = env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth";
 if (env.SEPOLIA_RPC_URL) {
   const client = ensClient(env.SEPOLIA_RPC_URL, env.ENS_UNIVERSAL_RESOLVER as Hex | undefined);
+  ensRead = client;
   if (env.ENS_PRIVATE_KEY && env.ENS_RESOLVER) writer = new EnsWriter(env.SEPOLIA_RPC_URL, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client, env.ENS_APPROVER_REGISTRY as Hex | undefined);
   policies = new EnsPolicyResolver(client);
   roles = new EnsRoleRegistry(client, writer);
@@ -99,6 +101,66 @@ const bindingMode: "commitment" | "name" =
   (verifier.mode === "worldid" && env.WORLD_ENV !== "production" ? "name" : oidc && /sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment");
 
 const auditName = env.ENS_AUDIT_NAME ?? "audit.acme.eth";
+
+// ---------- MultiBaas (Curvegrid): ENS events pushed to us, and an indexed change history ----------
+const mb = env.MULTIBAAS_URL && env.MULTIBAAS_API_KEY ? new MultiBaas(env.MULTIBAAS_URL, env.MULTIBAAS_API_KEY) : undefined;
+const orgRoot = defaultAgentName.split(".").slice(-2).join(".");
+let book: NameBook | undefined;
+/** Names Airlock knows, so event ids and hashes can be shown as names. */
+async function nameBook(): Promise<NameBook> {
+  if (book) return book;
+  const deploy: Record<string, string> = (() => { try { return JSON.parse(readFileSync(path("data/ens-deploy.json"), "utf8")); } catch { return {}; } })();
+  const people = ["alice", "bob", "carol", "dave"];
+  // Shared records first: a record several names link to is named after the shared policy, not whichever agent came first.
+  const names = [`legal.policies.${orgRoot}`, defaultAgentName, defaultAgentName.replace(/^[^.]+/, "nda-agent"), auditName, ...people.map((p) => `${p}.legal.approvers.${orgRoot}`)];
+  const records: Record<string, string> = {};
+  if (ensRead && env.ENS_RESOLVER) {
+    const abi = parseAbi(["function getRecordId(bytes32 node) view returns (uint256)"]);
+    for (const n of names) {
+      const id = await ensRead.readContract({ address: env.ENS_RESOLVER as Hex, abi, functionName: "getRecordId", args: [namehash(n)] }).catch(() => 0n);
+      if (id && !records[String(id)]) records[String(id)] = n;
+    }
+  }
+  const reg = (k: string) => (deploy[k] ?? "").toLowerCase();
+  const accounts: Record<string, string> = {};
+  if (env.ENS_PRIVATE_KEY) accounts[privateKeyToAccount(env.ENS_PRIVATE_KEY as Hex).address.toLowerCase()] = "gateway";
+  if (env.ENS_SECURITY_ADDRESS) accounts[env.ENS_SECURITY_ADDRESS.toLowerCase()] = "security";
+  book = {
+    records,
+    registries: { [reg("registry:legal")]: `legal.approvers.${orgRoot}`, [reg("registry:agents")]: `agents.${orgRoot}`, [reg("registry:policies")]: `policies.${orgRoot}`, [reg("registry:approvers")]: `approvers.${orgRoot}`, [reg("registry:root")]: orgRoot },
+    labels: [...people, "agents", "approvers", "legal", "audit", "policies", "contract-agent", "nda-agent"],
+    keys: [...POLICY_KEYS, ...GATEWAY_KEYS],
+    accounts,
+  };
+  return book;
+}
+const chain = mb
+  ? {
+      verify: (raw: string, sig?: string, ts?: string) => !!env.MULTIBAAS_WEBHOOK_SECRET && verifyWebhook(env.MULTIBAAS_WEBHOOK_SECRET, raw, sig, ts),
+      async onEvents(body: unknown) {
+        const evts = parseWebhook(body);
+        const b = await nameBook();
+        for (const e of evts) {
+          if (e.name === "LabelRegistered" || e.name === "Linked") book = undefined; // new names/records: rebuild next time
+          const d = describe(e, b);
+          if (d.invalidates && policies instanceof EnsPolicyResolver) policies.invalidate();
+          approvals.emitEvent({ type: "chain.event", kind: d.kind, text: d.text, tx: e.tx, at: e.at });
+          console.log(`[multibaas] ${d.text}${e.tx ? `  tx ${e.tx}` : ""}`);
+        }
+        return evts.length;
+      },
+      async recent() {
+        const b = await nameBook();
+        const lists = await Promise.all(["airlockresolver", "airlockregistry"].map((label) => mb.events({ contract_label: label, limit: 50 }).catch(() => [])));
+        return lists
+          .flat()
+          .map((raw) => toChainEvent(raw))
+          .filter((e): e is ChainEvent => !!e)
+          .map((e) => ({ ...describe(e, b), tx: e.tx, block: e.block, at: e.at }))
+          .sort((x, y) => (y.block ?? 0) - (x.block ?? 0));
+      },
+    }
+  : undefined;
 const audit = new JsonlAuditLog(path(env.AUDIT_FILE ?? "data/audit.jsonl"), env.GATEWAY_SECRET ?? "dev-secret-change-me", writer && ((root) => writer!.setText(auditName, "airlock.auditRoot", root)));
 const approvalTimeoutMs = Number(env.APPROVAL_TIMEOUT_MS ?? 300_000);
 const approvals = new ApprovalStore(approvalTimeoutMs);
@@ -127,6 +189,7 @@ const app = buildApp({
   verifier,
   oidc,
   ens,
+  chain,
   // Test environments (World staging / the event sandbox) use test identities, so approvers are bound to their live
   // ENS name; production binds the World identity to the commitment enrolled on ENS. Override: WORLD_BINDING.
   binding: bindingMode,
@@ -140,6 +203,7 @@ const app = buildApp({
     worldIdMode: verifier.mode,
     defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
     worldIdAgents: !!oidc,
+    multibaas: !!mb,
     binding: bindingMode,
     ensMode,
     defaultClaudeModel,

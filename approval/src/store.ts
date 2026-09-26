@@ -7,7 +7,8 @@ export type AirlockEvent =
   | { type: "audit.appended"; seq: number; decision: string }
   | { type: "request.routed"; requestId: string; route: string; reason?: string }
   | { type: "approval.progress"; request: ApprovalRequest }
-  | { type: "approval.refused"; requestId: string; approverName?: string; reason: string };
+  | { type: "approval.refused"; requestId: string; approverName?: string; reason: string }
+  | { type: "chain.event"; kind: string; text: string; tx?: string; at?: string };
 
 /** In-memory approval queue. Also the event bus the Console's SSE stream listens on. */
 export class ApprovalStore extends EventEmitter implements Approver {

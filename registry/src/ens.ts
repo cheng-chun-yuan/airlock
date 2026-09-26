@@ -24,6 +24,11 @@ export class EnsPolicyResolver implements PolicyResolver {
   constructor(private client: PublicClient, private cacheMs = 10_000) {}
   private cache = new Map<string, { at: number; p: Policy }>();
 
+  /** Drop cached policies (e.g. MultiBaas reported a record change on-chain). */
+  invalidate() {
+    this.cache.clear();
+  }
+
   async resolve(agent: string): Promise<Policy> {
     const hit = this.cache.get(agent);
     if (hit && Date.now() - hit.at < this.cacheMs) return hit.p;

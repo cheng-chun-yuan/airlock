@@ -33,6 +33,8 @@ export interface AppDeps {
   ensLink?: (root: string) => string;
   /** When set, every route except health / static IDKit / OIDC callback needs this token. */
   accessToken?: string;
+  /** MultiBaas: verified webhook deliveries of ENS events, and the indexed change history. */
+  chain?: { secret?: string; onEvents(raw: unknown): Promise<number>; recent(): Promise<unknown[]>; verify(raw: string, sig?: string, ts?: string): boolean };
   /** Live ENS view for the Console (ENS mode only). */
   ens?: { status(localRoot: string): Promise<unknown>; approver(name: string, role?: string): Promise<unknown> };
 }
@@ -81,7 +83,7 @@ export function buildApp(d: AppDeps) {
   if (d.accessToken) {
     const want = Buffer.from(d.accessToken);
     const ok = (v?: string | null) => !!v && v.length === d.accessToken!.length && timingSafeEqual(Buffer.from(v), want);
-    const open = (p: string) => p === "/health" || p === "/oidc/callback" || p.startsWith("/vendor/");
+    const open = (p: string) => p === "/health" || p === "/oidc/callback" || p === "/multibaas/webhook" || p.startsWith("/vendor/");
     app.use("*", async (c, next) => {
       const url = new URL(c.req.url);
       if (open(url.pathname)) return next();
@@ -241,6 +243,8 @@ export function buildApp(d: AppDeps) {
       .then((body) => (ensCache = { at: Date.now(), body }))
       .finally(() => (ensRefresh = undefined)));
   if (d.ens) void refreshEns().catch(() => {});
+  // A chain change makes the cached ENS view stale right away.
+  d.approvals.on("event", (e: AirlockEvent) => { if (e.type === "chain.event" && d.ens) { ensCache = undefined; void refreshEns().catch(() => {}); } });
   app.get("/ens", async (c) => {
     if (!d.ens) return c.json({ error: "ENS not configured (static JSON mode)" }, 404);
     if (c.req.query("fresh") !== undefined || !ensCache) await refreshEns();
@@ -251,6 +255,19 @@ export function buildApp(d: AppDeps) {
     return c.json({ ...body, audit: { ...body.audit, local, anchored: !!body.audit.onChain && body.audit.onChain.toLowerCase() === local.toLowerCase() } });
   });
   app.get("/ens/approver", async (c) => (d.ens ? c.json(await d.ens.approver(c.req.query("name") ?? "", c.req.query("role"))) : c.json({ error: "ENS not configured" }, 404)));
+
+  // ---------- MultiBaas (Curvegrid): on-chain ENS changes, pushed and indexed ----------
+  app.post("/multibaas/webhook", async (c) => {
+    if (!d.chain) return c.json({ error: "MultiBaas not configured" }, 404);
+    const raw = await c.req.text();
+    // HMAC-signed by MultiBaas; the access-token gate doesn't apply, the signature does.
+    if (!d.chain.verify(raw, c.req.header("x-multibaas-signature"), c.req.header("x-multibaas-timestamp"))) return c.json({ error: "bad signature" }, 401);
+    let body: unknown;
+    try { body = JSON.parse(raw); } catch { return c.json({ error: "bad json" }, 400); }
+    const n = await d.chain.onEvents(body);
+    return c.json({ ok: true, events: n });
+  });
+  app.get("/ens/changes", async (c) => (d.chain ? c.json(await d.chain.recent()) : c.json({ error: "MultiBaas not configured" }, 404)));
 
   app.post("/audit/anchor", async (c) => {
     try {
