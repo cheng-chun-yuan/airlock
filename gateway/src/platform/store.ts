@@ -81,7 +81,8 @@ export interface LocalConfig {
 }
 
 export interface FrontierConfig {
-  provider: "anthropic" | "openai";
+  /** hosted: the platform's own frontier upstream, shared and rate-limited; no URL or key of the gateway's own. */
+  provider: "anthropic" | "openai" | "hosted";
   /** Anthropic default when unset; required for "openai" (any OpenAI-compatible upstream). */
   baseUrl?: string;
   apiKey?: Sealed;

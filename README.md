@@ -70,7 +70,7 @@ Anyone can run their own airlock, with their own models and people:
 
 1. **Sign in with a wallet** (SIWE: a signature, no gas).
 2. **Create a gateway.** Pick a name, e.g. `acme-legal` → **`acme-legal.airlock.eth`** is registered on Sepolia with its own resolver and registries, and your wallet holds every role on them. The policy (`policy.acme-legal.airlock.eth`), the approver role (`approvers.…`) and the audit anchor (`audit.…`) live under it.
-3. **Bring your models.** Local: the Airlock-hosted model, or any OpenAI-compatible endpoint you run (vLLM, Ollama, LM Studio; from a laptop, expose it with a tunnel). Frontier: Anthropic or any OpenAI-compatible API, with your key (encrypted at rest, never shown again).
+3. **Bring your models.** Local: the Airlock-hosted model, or any OpenAI-compatible endpoint you run (vLLM, Ollama, LM Studio; from a laptop, expose it with a tunnel). Frontier: the Airlock-hosted model (no key needed, 5 frontier requests per person per hour), or Anthropic / any OpenAI-compatible API with your own key (encrypted at rest, never shown again).
 4. **Invite people** with a one-time link and a role: **member** (sends requests), **approver** (verifies once with World ID; gets `<name>.approvers.acme-legal.airlock.eth`), **admin** (settings and members).
 5. **Connect agents** with a per-member API key (`alk_…`). The key alone picks the gateway and the person: identity headers from clients are ignored, and an approver can only approve as themselves.
 

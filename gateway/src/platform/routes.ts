@@ -25,6 +25,8 @@ export interface PlatformDeps {
   maxGatewaysPerUser: number;
   /** The platform's own local model, offered to gateways that don't run one. */
   sharedLocal?: { model: string };
+  /** The platform's own frontier upstream, offered to gateways without a key (rate-limited per person). */
+  sharedFrontier?: { name: string; models: string[]; defaultModel: string; perHour: number };
   consoleHtml: () => string;
   publicUrl: string;
   /** World ID for Agents: one callback URL for every gateway. */
@@ -90,6 +92,11 @@ export function buildPlatform(d: PlatformDeps) {
   const provisioning = new Set<string>();
   const limit = hourly();
   const L = { chatPerHour: 120, demoChatPerHour: 20, newGatewaysPerHour: 10, ...d.limits };
+  /** Would this request reach the frontier model? airlock/* always may; auto may escalate; local/* never does. */
+  const mayEgress = (body: unknown) => {
+    const m = String((body as { model?: unknown })?.model ?? "auto");
+    return m === "auto" || m.startsWith("airlock/");
+  };
 
   const me = (c: Context) => d.auth.read(getCookie(c, SESSION));
   // The SIWE domain is this server's configured public origin, never a request header: a client can send any
@@ -146,7 +153,7 @@ export function buildPlatform(d: PlatformDeps) {
 
   app.get("/api/me", (c) => {
     const address = me(c);
-    const platform = { root: d.root, canCreate: !!d.provisioner, maxGateways: d.maxGatewaysPerUser, sharedLocal: d.sharedLocal ?? null, allowPrivateUpstreams: d.allowPrivateUpstreams };
+    const platform = { root: d.root, canCreate: !!d.provisioner, maxGateways: d.maxGatewaysPerUser, sharedLocal: d.sharedLocal ?? null, sharedFrontier: d.sharedFrontier ?? null, allowPrivateUpstreams: d.allowPrivateUpstreams };
     if (!address) return c.json({ address: null, platform });
     const gateways = store.forUser(address).map((g) => view(g, store.memberOf(g, address)!));
     return c.json({ address, gateways, platform });
@@ -168,6 +175,11 @@ export function buildPlatform(d: PlatformDeps) {
     }
     const f = body.frontier ?? prev?.frontier;
     if (!f) return { error: "frontier model settings required" };
+    if (f.provider === "hosted") {
+      if (!d.sharedFrontier) return { error: "this server has no hosted frontier model; enter your own provider and key" };
+      const { models, defaultModel } = d.sharedFrontier;
+      return { local, frontier: { provider: "hosted", models, defaultModel: models.includes(String(f.defaultModel)) ? String(f.defaultModel) : defaultModel } as FrontierConfig };
+    }
     const provider = f.provider === "openai" ? "openai" : "anthropic";
     let baseUrl: string | undefined;
     if (f.baseUrl || provider === "openai") {
@@ -418,9 +430,10 @@ export function buildPlatform(d: PlatformDeps) {
       })(),
     ).catch((e) => ({ ok: false, detail: (e as Error).message }));
     const f = models.frontier!;
-    const key = d.vault.open(f.apiKey);
+    const key = f.provider === "hosted" ? undefined : d.vault.open(f.apiKey);
     const frontier = await t(
       (async () => {
+        if (f.provider === "hosted") return { ok: true, detail: `Airlock-hosted: ${d.sharedFrontier?.name} → ${f.defaultModel}, ${d.sharedFrontier?.perHour} requests per person per hour` };
         if (!key) throw new Error("no API key");
         const anthropic = f.provider === "anthropic";
         const base = f.baseUrl ?? (anthropic ? "https://api.anthropic.com" : "https://api.openai.com/v1");
@@ -763,6 +776,14 @@ export function buildPlatform(d: PlatformDeps) {
     if (path === "/v1/chat/completions") {
       const wait = limit(`${g.id}|${m.address}`, g.kind === "demo" ? L.demoChatPerHour : L.chatPerHour);
       if (wait) return c.json({ error: { message: `rate limit: too many requests this hour; try again in ${wait} min`, type: "rate_limit_error" } }, 429);
+      // The hosted frontier spends the platform's own quota: a few frontier requests per person per hour.
+      if (g.kind === "user" && g.frontier.provider === "hosted" && d.sharedFrontier) {
+        const peek = (await c.req.raw.clone().json().catch(() => ({}))) as unknown;
+        if (mayEgress(peek)) {
+          const w = limit(`${g.id}|${m.address}|hosted`, d.sharedFrontier.perHour);
+          if (w) return c.json({ error: { message: `the Airlock-hosted frontier model allows ${d.sharedFrontier.perHour} requests per person per hour; try again in ${w} min, use local/… models, or add your own provider key in Manage › Models`, type: "rate_limit_error" } }, 429);
+        }
+      }
     }
     const t = d.tenants.get(g);
     const { body } = o;

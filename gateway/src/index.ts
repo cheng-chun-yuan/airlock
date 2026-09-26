@@ -286,6 +286,8 @@ const deploy: Record<string, string> = (() => { try { return JSON.parse(readFile
 const rootRegistry = (env.ENS_ROOT_REGISTRY ?? deploy["registry:root"]) as Hex | undefined;
 const platformKey = env.PLATFORM_PRIVATE_KEY ?? env.ENS_PRIVATE_KEY;
 const sharedLocal = env.SHARED_LOCAL === "0" ? undefined : local;
+// The demo's frontier upstream, offered to new gateways that have no key of their own (HOSTED_FRONTIER_PER_HOUR each).
+const sharedFrontier = env.SHARED_FRONTIER === "0" || !egress.configured ? undefined : { name: env.HOSTED_FRONTIER_LABEL ?? "Codex", models: demoConfig.claudeModels, defaultModel: defaultClaudeModel, perHour: Number(env.HOSTED_FRONTIER_PER_HOUR ?? 5) };
 let ctx: PlatformContext | undefined, provisioner: EnsProvisioner | undefined;
 if (ensRead && env.SEPOLIA_RPC_URL && platformKey && rootRegistry) {
   provisioner = new EnsProvisioner(ensRead, env.SEPOLIA_RPC_URL, platformKey as Hex, rootRegistry);
@@ -306,6 +308,7 @@ if (ensRead && env.SEPOLIA_RPC_URL && platformKey && rootRegistry) {
     commitmentSalt: env.COMMITMENT_SALT ?? "airlock-dev-salt",
     publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
     sharedLocal,
+    sharedFrontier: sharedFrontier ? egress : undefined,
     presidioUrl: env.PRESIDIO_URL,
     redactLlm: env.REDACT_LLM === "1",
     attackTest: env.ATTACK_TEST !== "0",
@@ -325,6 +328,7 @@ const app = buildPlatform({
   allowPrivateUpstreams: env.ALLOW_PRIVATE_UPSTREAMS === "1",
   maxGatewaysPerUser: Number(env.MAX_GATEWAYS_PER_USER ?? 3),
   sharedLocal: sharedLocal && { model: sharedLocal.model },
+  sharedFrontier,
   consoleHtml: () => (process.env.NODE_ENV === "production" ? consoleHtml : readFileSync(path("console/index.html"), "utf8")),
   publicUrl: env.PUBLIC_URL ?? `http://localhost:${port}`,
   oidcTenant: oidc && ((state) => oidc.peek(state)?.tenant),

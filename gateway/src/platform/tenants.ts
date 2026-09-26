@@ -41,6 +41,8 @@ export interface PlatformContext {
   commitmentSalt: string;
   publicUrl: string;
   sharedLocal?: LocalModel;
+  /** The platform's own frontier upstream, for gateways that chose "hosted". */
+  sharedFrontier?: FrontierModel;
   presidioUrl?: string;
   redactLlm: boolean;
   attackTest: boolean;
@@ -87,9 +89,11 @@ export function buildUserTenant(p: PlatformContext, gw: Gateway, durable: Durabl
     gw.local.mode === "custom" && gw.local.baseUrl && gw.local.model
       ? new LocalModel(gw.local.baseUrl, gw.local.model, true, open(gw.local.apiKey, "local model"))
       : p.sharedLocal ?? new LocalModel("http://127.0.0.1:9/v1", "none"); // no local model: requests fail loudly, nothing leaves
-  const key = open(gw.frontier.apiKey, "frontier");
+  const key = gw.frontier.provider === "hosted" ? undefined : open(gw.frontier.apiKey, "frontier");
   const egress: FrontierModel =
-    gw.frontier.provider === "openai" ? new OpenAICompatModel(key, gw.frontier.baseUrl ?? "https://api.openai.com/v1") : new ClaudeModel(key, gw.frontier.baseUrl ?? "https://api.anthropic.com");
+    gw.frontier.provider === "hosted" && p.sharedFrontier
+      ? p.sharedFrontier
+      : gw.frontier.provider === "openai" ? new OpenAICompatModel(key, gw.frontier.baseUrl ?? "https://api.openai.com/v1") : new ClaudeModel(key, gw.frontier.baseUrl ?? "https://api.anthropic.com");
 
   const ask = (system: string, user: string) => local.ask(system, user);
   const recognizers: Recognizer[] = [ruleRecognizer];

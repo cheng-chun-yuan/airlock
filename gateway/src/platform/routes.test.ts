@@ -273,3 +273,27 @@ test("after hand-over, policies and agent links are signed by the owner's wallet
   assert.equal((await as("owner")("PUT", "/api/gateways/acme/agents/x", { policy: "missing" })).status, 400);
   assert.equal((await as("owner")("DELETE", "/api/gateways/acme/policies/strict")).status, 409, "intern-bot still uses it");
 });
+
+test("hosted frontier: no key needed, the platform's models, a few frontier requests per person per hour", async () => {
+  const store = new PlatformStore(join(mkdtempSync(join(tmpdir(), "airlock-")), "platform.json"));
+  const tenants = new Map<string, Tenant>();
+  const fake = { get: (g: Gateway) => tenants.get(g.id) ?? tenants.set(g.id, echoTenant(g)).get(g.id)! } as unknown as Tenants;
+  const build = (sharedFrontier?: { name: string; models: string[]; defaultModel: string; perHour: number }) =>
+    buildPlatform({ store, auth: new SiweAuth("s"), tenants: fake, vault: new Vault("s"), root: "airlock.eth", allowPrivateUpstreams: true, maxGatewaysPerUser: 3, consoleHtml: () => "", publicUrl: "http://localhost", sharedFrontier });
+  const app = build({ name: "codex", models: ["gpt-5.6-sol", "gpt-6-sol"], defaultModel: "gpt-5.6-sol", perHour: 2 });
+  const acct = privateKeyToAccount(generatePrivateKey());
+  const gw = store.add({ slug: "acme", name: "Acme", kind: "user", owner: acct.address.toLowerCase(), local: { mode: "custom", baseUrl: "http://127.0.0.1:1/v1", model: "m" }, frontier: { provider: "anthropic", models: ["claude-*"], defaultModel: "claude-sonnet-5" }, policy: { maxClass: "confidential", egress: "approval", highRiskQuorum: 2 }, ens: { status: "provisioning", state: { done: {} } }, members: [{ address: acct.address.toLowerCase(), label: "owner", role: "admin", joinedAt: 0 }] });
+  const { message } = (await (await app.request("/api/auth/nonce", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address: acct.address }) })).json()) as { message: string };
+  const v = await app.request("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message, signature: await acct.signMessage({ message }) }) });
+  const cookie = v.headers.get("set-cookie")!.split(";")[0];
+  const req = (a: typeof app, method: string, path: string, body: unknown) => a.request(path, { method, headers: { cookie, "content-type": "application/json" }, body: JSON.stringify(body) });
+
+  const r = await req(app, "PATCH", "/api/gateways/acme", { frontier: { provider: "hosted", defaultModel: "gpt-6-sol", apiKey: "ignored", models: ["evil-*"] } });
+  assert.equal(r.status, 200, await r.clone().text());
+  assert.deepEqual(gw.frontier, { provider: "hosted", models: ["gpt-5.6-sol", "gpt-6-sol"], defaultModel: "gpt-6-sol" }, "no key stored; the platform's models, not the caller's");
+  const chat = async (model: string) => (await req(app, "POST", "/g/acme/v1/chat/completions", { model, messages: [] })).status;
+  assert.deepEqual([await chat("airlock/gpt-5.6-sol"), await chat("auto"), await chat("airlock/gpt-5.6-sol")], [200, 200, 429]);
+  assert.equal(await chat("local/m"), 200, "local requests don't spend the hosted quota");
+  // A server without a hosted frontier refuses it.
+  assert.equal((await req(build(), "PATCH", "/api/gateways/acme", { frontier: { provider: "hosted" } })).status, 400);
+});

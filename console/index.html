@@ -1550,7 +1550,8 @@ function showHome() {
 
 /* ---------- model + policy forms (create and settings) ---------- */
 function modelsForm(v = {}) {
-  const l = v.local ?? { mode: ME.platform.sharedLocal ? "shared" : "custom" }, f = v.frontier ?? { provider:"anthropic", models:["claude-sonnet-5", "claude-opus-5-5"], defaultModel:"claude-sonnet-5" };
+  const l = v.local ?? { mode: ME.platform.sharedLocal ? "shared" : "custom" }, f = v.frontier ?? (ME.platform.sharedFrontier ? { provider:"hosted", models:ME.platform.sharedFrontier.models, defaultModel:ME.platform.sharedFrontier.defaultModel } : { provider:"anthropic", models:["claude-sonnet-5", "claude-opus-5-5"], defaultModel:"claude-sonnet-5" });
+  const SF = ME.platform.sharedFrontier;
   const keyHint = (k) => k ? `saved (${esc(k)}); leave empty to keep it` : "";
   return `<fieldset class="fs"><legend>Local model</legend>
     <p class="lede">Runs first on every request: de-identifies it and tries to re-identify the result. Answers when nothing may leave.</p>
@@ -1567,10 +1568,11 @@ function modelsForm(v = {}) {
   <fieldset class="fs"><legend>Frontier model</legend>
     <p class="lede">Gets only de-identified text, and only when your policy (or an approver) allows it. Your key is encrypted on the server and never shown again.</p>
     <div class="grid2">
-      <label class="f"><span>Provider</span><select class="field" name="provider"><option value="anthropic" ${f.provider === "anthropic" ? "selected" : ""}>Anthropic</option><option value="openai" ${f.provider === "openai" ? "selected" : ""}>OpenAI-compatible (OpenAI, OpenRouter, LiteLLM…)</option></select></label>
-      <label class="f"><span>Base URL</span><input class="field" name="frontierUrl" value="${esc(f.baseUrl ?? "")}" placeholder="${f.provider === "openai" ? "https://api.openai.com/v1" : "https://api.anthropic.com (default)"}" /></label>
-      <label class="f"><span>API key</span><input class="field" name="frontierKey" type="password" placeholder="${keyHint(f.apiKey) || (f.provider === "openai" ? "sk-…" : "sk-ant-…")}" /></label>
-      <label class="f"><span>Models members may use</span><input class="field" name="models" value="${esc((f.models ?? []).join(", "))}" placeholder="claude-sonnet-5, claude-opus-5-5" /><small class="muted">Comma-separated; * works as a wildcard. Written to ENS.</small></label>
+      <label class="f"><span>Provider</span><select class="field" name="provider">${SF ? `<option value="hosted" ${f.provider === "hosted" ? "selected" : ""}>Airlock-hosted · ${SF.perHour} requests per person per hour</option>` : ""}<option value="anthropic" ${f.provider === "anthropic" ? "selected" : ""}>Anthropic</option><option value="openai" ${f.provider === "openai" ? "selected" : ""}>OpenAI-compatible (OpenAI, OpenRouter, LiteLLM…)</option></select></label>
+      <label class="f" data-own-frontier><span>Base URL</span><input class="field" name="frontierUrl" value="${esc(f.baseUrl ?? "")}" placeholder="${f.provider === "openai" ? "https://api.openai.com/v1" : "https://api.anthropic.com (default)"}" /></label>
+      <label class="f" data-own-frontier><span>API key</span><input class="field" name="frontierKey" type="password" placeholder="${keyHint(f.apiKey) || (f.provider === "openai" ? "sk-…" : "sk-ant-…")}" /></label>
+      <label class="f" data-own-frontier><span>Models members may use</span><input class="field" name="models" value="${esc((f.models ?? []).join(", "))}" placeholder="claude-sonnet-5, claude-opus-5-5" /><small class="muted">Comma-separated; * works as a wildcard. Written to ENS.</small></label>
+      <p class="muted" data-hosted-frontier style="font-size:13px; margin:30px 0 0">${SF ? `No key needed: requests go through this Airlock server's own frontier model (${esc(SF.models.join(", "))}), ${SF.perHour} per person per hour. Add your own provider any time.` : ""}</p>
       <label class="f"><span>Default model</span><input class="field" name="defaultModel" value="${esc(f.defaultModel ?? "")}" placeholder="claude-sonnet-5" /></label>
     </div>
   </fieldset>`;
@@ -1600,7 +1602,11 @@ function wireModels(root) {
   const sync = () => { $("[data-local-custom]", root).hidden = root.querySelector('[name="localMode"]:checked')?.value !== "custom"; };
   $$('[name="localMode"]', root).forEach((r) => (r.onchange = sync));
   const prov = $('[name="provider"]', root);
+  const hosted = () => { $$("[data-own-frontier]", root).forEach((el) => (el.hidden = prov.value === "hosted")); $$("[data-hosted-frontier]", root).forEach((el) => (el.hidden = prov.value !== "hosted")); };
+  hosted();
   prov.onchange = () => {
+    hosted();
+    if (prov.value === "hosted" && ME.platform.sharedFrontier) $('[name="defaultModel"]', root).value = ME.platform.sharedFrontier.defaultModel;
     $('[name="frontierUrl"]', root).placeholder = prov.value === "openai" ? "https://api.openai.com/v1" : "https://api.anthropic.com (default)";
     $('[name="frontierKey"]', root).placeholder = prov.value === "openai" ? "sk-…" : "sk-ant-…";
   };
@@ -1611,7 +1617,7 @@ function readSettings(form) {
   const checked = (n) => form.querySelector(`[name="${n}"]:checked`)?.value;
   const local = { mode:checked("localMode") ?? "custom" };
   if (local.mode === "custom") { local.baseUrl = v("localUrl"); local.model = v("localModel"); if (v("localKey")) local.apiKey = v("localKey"); }
-  const frontier = { provider:v("provider"), models:v("models").split(",").map((x) => x.trim()).filter(Boolean), defaultModel:v("defaultModel") };
+  const frontier = v("provider") === "hosted" ? { provider:"hosted", defaultModel:v("defaultModel") } : { provider:v("provider"), models:v("models").split(",").map((x) => x.trim()).filter(Boolean), defaultModel:v("defaultModel") };
   if (v("frontierUrl")) frontier.baseUrl = v("frontierUrl");
   if (v("frontierKey")) frontier.apiKey = v("frontierKey");
   return { local, frontier, policy:{ maxClass:checked("maxClass"), egress:checked("egress"), highRiskQuorum:Number(checked("quorum")) } };
