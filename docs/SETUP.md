@@ -96,9 +96,8 @@ The script is resumable; progress is kept in `data/ens-deploy.json`. It does the
 **Day to day:**
 ```bash
 npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth
-npm run ens -- enroll bob.legal.approvers.airlock.eth <commitment>   # creates the subname if needed
 npm run ens -- revoke alice.legal.approvers.airlock.eth               # unregister + clear record
 ```
-In the Console, **Enroll** creates the subname and writes the commitment, and **Ledger → Anchor root to ENS** writes `airlock.auditRoot`.
+Enrolling an approver has no CLI on purpose: it happens only on the Console's **Approvers** page, after the person verifies with World ID (that creates the subname and writes the commitment). **Audit → Anchor to ENS** writes `airlock.auditRoot`.
 
 **Contract addresses** (ENSv2 Sepolia deployment of 2026-09-15; override with env if ENS redeploys): ETHRegistrar `0xabe7…94ca`, VerifiableFactory `0x9e72…841c`, UserRegistryImpl `0xa803…0263`, PermissionedResolverImpl `0x14f0…f243`, MockUSDC `0x16f9…aa8e`. The universal resolver is viem's default `0xeeee…eeee`.
