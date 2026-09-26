@@ -27,6 +27,7 @@
   body { font:15px/1.55 var(--body); background:var(--canvas); color:var(--ink); -webkit-font-smoothing:antialiased; }
   button { font:inherit; color:inherit; }
   .mono { font-family:var(--mono); }
+  a { color:var(--ink); text-decoration-color:var(--sand); text-underline-offset:2px; } a:hover { color:var(--ember); }
   .eyebrow { font:500 11px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); margin:0 0 10px; }
   .muted { color:var(--umber); }
 
@@ -201,6 +202,21 @@
   @keyframes blink { 50% { opacity:0; } }
 
   /* ---------- toast ---------- */
+  .ens-grid { display:grid; grid-template-columns:1.3fr 1fr; gap:16px; }
+  @media (max-width: 900px) { .ens-grid { grid-template-columns:1fr; } }
+  .panel { border:1px solid var(--hairline); border-radius:14px; padding:18px; }
+  .panel h3 { margin:0 0 10px; font:500 17px var(--display); }
+  .rec { display:grid; grid-template-columns:170px 1fr auto; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--faint); font-size:13.5px; }
+  .rec:last-child { border-bottom:0; }
+  .rec .k { font:500 12px var(--mono); color:var(--umber); } .rec .v { font:13px var(--mono); word-break:break-all; }
+  .who { font:600 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; padding:2px 7px; border-radius:4px; background:var(--haze); color:var(--umber); white-space:nowrap; }
+  .who.sec { background:var(--ink); color:var(--canvas); } .who.gw { background:var(--hold-tint); color:var(--hold); }
+  .matrix { width:100%; border-collapse:collapse; font-size:12.5px; } .matrix th, .matrix td { padding:6px 8px; border-bottom:1px solid var(--faint); text-align:center; }
+  .matrix th:first-child, .matrix td:first-child { text-align:left; font-family:var(--mono); }
+  .yes { color:var(--go); font-weight:600; } .no { color:var(--ember); }
+  .anchor-state { display:flex; align-items:center; gap:10px; margin:6px 0 12px; font:600 12px var(--mono); letter-spacing:.06em; text-transform:uppercase; }
+  .tree { font:12.5px/1.75 var(--mono); white-space:pre; overflow-x:auto; background:var(--haze); border-radius:10px; padding:12px 14px; margin:0; }
+  .tree a { color:inherit; text-decoration:none; border-bottom:1px dotted var(--sand); } .tree a:hover { color:var(--ember); }
   .toasts { position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:8px; z-index:20; }
   .toast { background:var(--ink); color:var(--canvas); border-radius:10px; padding:10px 14px; font-size:13.5px; cursor:pointer; animation:slide-up .3s cubic-bezier(.2,.8,.2,1); max-width:320px; box-shadow:0 6px 24px rgba(0,0,0,.18); }
   .toast b { font:600 10.5px var(--mono); letter-spacing:.1em; display:block; color:var(--hold-tint); }
@@ -225,6 +241,7 @@
     <button data-tab="queue" class="on">Queue <span class="count" id="nPending"></span></button>
     <button data-tab="ledger">Ledger</button>
     <button data-tab="try">Try it</button>
+    <button data-tab="ens">ENS</button>
     <button data-tab="enroll">Enroll</button>
   </nav>
   <div class="ticker" id="ticker" title="recent decisions"></div>
@@ -249,6 +266,23 @@
     </div>
     <div class="chain" id="chain"></div>
     <div class="blkinfo" id="blkinfo"></div>
+  </section>
+
+  <section id="tab-ens" hidden>
+    <div class="ledger-head">
+      <div><p class="eyebrow">ENSv2 · Sepolia · read live</p><h2 id="ensTitle">—</h2><div class="root" id="ensSub"></div></div>
+      <div style="display:flex; gap:8px"><button class="btn" id="ensRefresh">Refresh</button></div>
+    </div>
+    <div class="ens-grid">
+      <div class="panel"><h3>Agent policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the agent's egress policy. Change one on-chain and the next request obeys it.</p><div id="ensPolicy"></div></div>
+      <div class="panel"><h3>Audit anchor</h3><div id="ensAudit"></div></div>
+      <div class="panel"><h3>Who may write what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (eth_call on the live contract).</p><div id="ensAccess"></div></div>
+      <div class="panel"><h3>Approver lookup</h3>
+        <div style="display:flex; gap:8px"><input class="field" id="ensName" placeholder="alice.legal.approvers.airlock.eth" style="flex:1" /><button class="btn dark" id="ensCheck">Check</button></div>
+        <pre class="out" id="ensApprover" style="margin-top:10px"></pre>
+        <h3 style="margin-top:18px">Name tree</h3><pre class="tree" id="ensTree"></pre>
+      </div>
+    </div>
   </section>
 
   <section id="tab-enroll" hidden>
@@ -299,8 +333,9 @@ const wireVia = (root) => $$("[data-via]", root).forEach((b) => (b.onclick = () 
 function tab(name) {
   if (name !== "queue") history.replaceState(null, "", "#" + name); else if (selected) history.replaceState(null, "", "#" + selected);
   $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
-  ["queue", "ledger", "try", "enroll"].forEach((t) => ($("#tab-" + t).hidden = t !== name));
+  ["queue", "ledger", "try", "ens", "enroll"].forEach((t) => ($("#tab-" + t).hidden = t !== name));
   if (name === "ledger") loadLedger();
+  if (name === "ens") loadEns();
 }
 $$(".tabs button").forEach((b) => (b.onclick = () => tab(b.dataset.tab)));
 
@@ -606,6 +641,47 @@ $("#send").onclick = async () => {
 };
 $("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#send").click(); });
 
+/* ---------- ens ---------- */
+const ensApp = (n) => `<a href="https://app.ens.dev/${encodeURIComponent(n)}" target="_blank">${esc(n)}</a>`;
+const scan = (a) => `<a href="https://sepolia.etherscan.io/address/${a}" target="_blank" class="mono">${a.slice(0, 8)}…${a.slice(-4)}</a>`;
+let ensState = null;
+async function loadEns() {
+  const s = await j("/ens");
+  if (s.error) { $("#ensTitle").textContent = "ENS not configured"; $("#ensSub").textContent = s.error; return; }
+  ensState = s;
+  const root = s.agent.split(".").slice(-2).join(".");
+  $("#ensTitle").innerHTML = ensApp(root);
+  $("#ensSub").innerHTML = `resolver ${s.resolver ? scan(s.resolver) : "—"}${s.approverRegistry ? ` · approver registry ${scan(s.approverRegistry)}` : ""}`;
+  const writer = (k) => { const w = s.access.filter((a) => a.canWrite[k]).map((a) => a.label); return `<span style="display:flex; gap:4px; justify-content:flex-end">${w.length ? w.map((l) => `<span class="who ${l === "security" ? "sec" : "gw"}">${l}</span>`).join("") : `<span class="who">nobody</span>`}</span>`; };
+  $("#ensPolicy").innerHTML = `<div class="rec"><span class="k">agent</span><span class="v">${ensApp(s.agent)}</span><span></span></div>` +
+    Object.entries(s.policy).map(([k, v]) => `<div class="rec"><span class="k">${esc(k.replace("airlock.", ""))}</span><span class="v">${v ? esc(v) : '<span class="muted">— (fail-closed)</span>'}</span>${writer(k)}</div>`).join("");
+  const a = s.audit;
+  $("#ensAudit").innerHTML = `<div class="anchor-state ${a.anchored ? "yes" : "no"}">${a.anchored ? "✓ on-chain root matches the local ledger" : "✗ ledger has moved since the last anchor"}</div>
+    <div class="rec"><span class="k">${ensApp(a.name)}</span><span class="v">${a.onChain ? esc(a.onChain) : "—"}</span>${writer("airlock.auditRoot")}</div>
+    <div class="rec"><span class="k">local merkle root</span><span class="v">${esc(a.local)}</span><span></span></div>
+    <button class="btn dark" id="ensAnchor" style="margin-top:12px">Anchor now</button>`;
+  $("#ensAnchor").onclick = async () => { $("#ensAnchor").textContent = "Anchoring… (Sepolia tx)"; const r = await post("/audit/anchor"); toast(r.error ? "ANCHOR FAILED" : "ANCHORED", r.error ?? `tx ${r.tx?.slice(0, 14)}…`); loadEns(); };
+  const keys = Object.keys(s.policy).concat(["airlock.approver", "airlock.auditRoot"]);
+  $("#ensAccess").innerHTML = `<table class="matrix"><tr><th>record key</th>${s.access.map((x) => `<th>${esc(x.label)}${x.admin ? " (admin)" : ""}<br><span class="muted" style="font-weight:400">${scan(x.address)}</span></th>`).join("")}</tr>` +
+    keys.map((k) => `<tr><td>${esc(k)}</td>${s.access.map((x) => `<td class="${x.canWrite[k] ? "yes" : "no"}">${x.canWrite[k] ? "✓ write" : "✗"}</td>`).join("")}</tr>`).join("") + "</table>";
+  const role = s.approverRole || `legal.approvers.${root}`;
+  $("#ensTree").innerHTML = [
+    `${ensApp(root)}`,
+    `├─ ${ensApp("agents." + root)}`,
+    `│   └─ ${ensApp(s.agent)}   ← policy`,
+    `├─ ${ensApp("approvers." + root)}`,
+    `│   └─ ${ensApp(role)}   ← approver role`,
+    `│       └─ ${ensApp("alice." + role)}   ← approver`,
+    `└─ ${ensApp(a.name)}   ← audit anchor`,
+  ].join("\n");
+  if (!$("#ensName").value) $("#ensName").value = "alice." + role;
+}
+$("#ensRefresh").onclick = loadEns;
+$("#ensCheck").onclick = async () => {
+  const r = await j(`/ens/approver?name=${encodeURIComponent($("#ensName").value.trim())}&role=${encodeURIComponent(ensState?.approverRole ?? "")}`);
+  $("#ensApprover").textContent = r.error ?? `${r.status.toUpperCase()}\nairlock.approver = ${r.record ?? "—"}${r.underRole ? "" : "\n(not under the approver role)"}`;
+};
+
 /* ---------- enroll ---------- */
 $("#enrollGo").onclick = async () => {
   const name = $("#enrollName").value.trim(), out = $("#enrollOut");
@@ -659,7 +735,7 @@ function tick(decision) {
   newSession();
   (await j("/audit")).records.slice(-40).forEach((r) => tick(r.decision));
   const hash = location.hash.slice(1);
-  if (["ledger", "try", "enroll"].includes(hash)) tab(hash); else if (hash) selected = hash;
+  if (["ledger", "try", "ens", "enroll"].includes(hash)) tab(hash); else if (hash) selected = hash;
   await loadQueue();
   if (selected) show(selected);
 
