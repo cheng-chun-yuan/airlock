@@ -185,9 +185,9 @@ export class PipelineRedactor implements Redactor {
   }
 }
 
-/** Put real values back into text. Tolerates markdown-escaped brackets. */
+/** Put real values back into text. Tolerates markdown-escaped brackets, and bare labels (ORG_1) when the model drops them; only this session's labels are replaced. */
 export function rehydrateText(text: string, session: Session): string {
-  return text.replace(/\\?<\s*([A-Z_]+_\d+)\s*\\?>/g, (m, id) => session.reverse.get(`<${id}>`) ?? m);
+  return text.replace(/\\?<\s*([A-Z_]+_\d+)\s*\\?>|\b([A-Z][A-Z_]*_\d+)\b/g, (m, id, bare) => session.reverse.get(`<${id ?? bare}>`) ?? m);
 }
 
 export function rehydrateMessage(m: ChatMessage, session: Session): ChatMessage {
@@ -236,8 +236,10 @@ export class StreamRehydrator {
     this.buf += text;
     let cut = this.buf.length;
     const open = this.buf.lastIndexOf("<");
+    const bare = /\b[A-Z][A-Z_]*\d*$/.exec(this.buf); // a bare label may be split too ("ORG" + "_1")
     if (open >= 0 && !this.buf.includes(">", open) && this.buf.length - open < this.maxHold) cut = open;
     else if (this.buf.endsWith("\\")) cut = this.buf.length - 1;
+    else if (bare && bare[0].length < this.maxHold) cut = bare.index;
     if (cut < this.buf.length && cut > 0 && this.buf[cut - 1] === "\\") cut--;
     const out = this.buf.slice(0, cut);
     this.buf = this.buf.slice(cut);

@@ -46,6 +46,16 @@ test("stream rehydration survives placeholders split across chunks", () => {
   assert.equal(out, "Ask Hank Scorpio at Globex Corporation if 3 < 5 and a<b. Done <");
 });
 
+test("bare labels (model dropped the brackets) are restored, also when split; unknown labels stay", () => {
+  const s = newSession("t5b");
+  s.reverse.set("<ORG_1>", "Kestrelwood Analytics");
+  s.reverse.set("<MONEY_2>", "$50,000");
+  assert.equal(rehydrateText("ORG_1's cap (MONEY_2) vs MONEY_9 and XORG_1.", s), "Kestrelwood Analytics's cap ($50,000) vs MONEY_9 and XORG_1.");
+  const r = new StreamRehydrator(s);
+  const out = ["If ", "ORG", "_1 caps at MONEY", "_2, CEO", " signs."].map((p) => r.push(p)).join("") + r.flush();
+  assert.equal(out, "If Kestrelwood Analytics caps at $50,000, CEO signs.");
+});
+
 test("local attack test: a correct guess of a placeholder is a measured leak → high", async () => {
   const mapping = { "<ORG_1>": "Apple Inc.", "<PERSON_1>": "Hank Scorpio" };
   const payload = [{ role: "user" as const, content: "The Cupertino iPhone maker <ORG_1> hired <PERSON_1>." }];
