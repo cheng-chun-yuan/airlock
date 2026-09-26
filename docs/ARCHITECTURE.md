@@ -212,10 +212,10 @@ airlock/
 | Router（local / airlock / auto）＋ 串流 | ✅ 真正的 token 串流；client 斷線會取消上游，並仍寫入稽核 |
 | Redactor：規則 → 字典 → Presidio → 本地模型標記 | ✅（本地模型標記：`REDACT_LLM=1`） |
 | RiskScorer：規則 ＋ 本地攻擊測試（P2） | ✅ 本地模型嘗試還原代號，猜中即為高風險 |
-| PolicyResolver / RoleRegistry（ENS） | ✅ 讀取已在 Sepolia 實測；寫入需要 key（`npm run ens`） |
-| Approver（World ID 4.0） | ✅ 程式完成，mock 模式實測；真實 staging app 待設定 |
+| PolicyResolver / RoleRegistry（ENS） | ✅ `airlock.eth` 已上 Sepolia；依 record key 分權（EAC）：security 帳號改政策，gateway 只能寫 approver 和 auditRoot |
+| Approver | ✅ World ID for Agents（sandbox OIDC）＋ IDKit v4，都已用真實環境實測 |
 | 核可範圍（P2） | ✅ 每次沿用都重新檢查核可者的 ENS 角色，撤銷即失效 |
-| AuditSink：hash chain ＋ Merkle ＋ 錨定 | ✅（錨定到鏈上需要 key） |
+| AuditSink：hash chain ＋ Merkle ＋ 錨定 | ✅ 已錨定到 `audit.airlock.eth`，Console 的 ENS 分頁可以比對鏈上和本地的 root |
 | Console | ✅ 單一 HTML（由 gateway 提供），未改用 Next.js |
 | LibreChat | 提供設定片段 `demo/librechat.yaml`，未改動本機運行中的 LibreChat |
 | Hermes | 依砍功能順序未做；可用 `skills/airlock/SKILL.md` 接入 |

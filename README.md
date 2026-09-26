@@ -41,6 +41,7 @@ Open the live demo and click through the four tabs:
 | **Try it** | *Public question* is sent straight out. *Confidential contract* is held at the door. *Re-identifiable* is caught by the local attack test. *Restricted data* never leaves. The answers stream in with real names restored. |
 | **Queue** | The request sits in the **airlock chamber**: Local → Redact → Policy → Human → Egress. Hover a `ORG·1` chip to see the real value, which stays local. Pick **World ID for Agents**, type `alice.legal.approvers.airlock.eth`, and **hold** the button (a tap does nothing). |
 | **Ledger** | Every decision is a hash-chained block. **Walk the chain** re-verifies it. **Anchor root to ENS** writes the Merkle root to `audit.airlock.eth`. |
+| **ENS** | Everything read **live** from Sepolia: the agent's policy records and who may write each one, whether the on-chain audit root matches the local ledger (**Anchor now**), the access-control matrix per record key, an approver lookup, and the name tree. |
 | **Enroll** | Bind a World ID to an ENS approver name. The subname is created on-chain if it doesn't exist. |
 
 ---
@@ -110,7 +111,7 @@ airlock.eth                                   UserRegistry (own subregistry), no
 | **Hierarchical subname registries** (a `UserRegistry` per level) | Roles are namespaces: *being an approver* means holding a live subname under `legal.approvers.airlock.eth`. |
 | **Expiry + `unregister`** | Approvals expire with the subname. Revoking = unregistering → the next approval by that human is **denied**, and any session approval scope they opened ends too. |
 | **PermissionedResolver** (records keyed by name, `setText(bytes name, …)`) | One resolver serves every leaf. Policy, approver commitments and the audit root live there. |
-| **Enhanced Access Control** (role bitmaps per registry/resolver) | Registries and the resolver are initialized with explicit role grants, and subname tokens carry their own roles (unregister, renew, set resolver). *Today one owner key holds them; the next step is per-record-key `ROLE_SET_TEXT` grants, so only a security account can change policy keys and the gateway can only write `airlock.approver` / `airlock.auditRoot`.* |
+| **Enhanced Access Control** (per-record-key roles) | **Write access is split by record key.** A **security account** is the resolver's sole admin and the only key that can change policy records (`maxClass`, `egress`, `models`, `approverRole`, `ownerRole`). The **gateway** holds `ROLE_SET_TEXT` only on `airlock.approver` and `airlock.auditRoot` (granted with `grantSetterRoles`; its root roles are revoked), so a stolen gateway key can't loosen any agent's policy. Verified on-chain: gateway `setText(airlock.models)` reverts. Source: [`npm run ens:eac`](registry/scripts/ens-eac.ts). Subname tokens carry their own roles (unregister, renew, set resolver). |
 | **Universal Resolver v2** | The gateway reads everything through it, so any ENS client sees the same policy. |
 
 **Design finding:** the PermissionedResolver answers wildcard (ENSIP-10) lookups by full name. If a *parent* like `legal.approvers.airlock.eth` pointed at it, an **unregistered** `alice` would fall back to the parent's resolver and still resolve her commitment, so revocation would silently fail. **Only leaves get a resolver.** We verified on-chain that unregistering alone makes the approver resolve to nothing.
@@ -122,7 +123,11 @@ airlock.eth                                   UserRegistry (own subregistry), no
 - **Contracts:**
   - PermissionedResolver [`0x0c47Bc81…`](https://sepolia.etherscan.io/address/0x0c47Bc813361aEB3d0aD84f8F642bCce0e34B7F4)
   - registries: root [`0xcfAC3D22…`](https://sepolia.etherscan.io/address/0xcfAC3D225b371fe4dD1a939bb8bcd0B9697C61aa), agents [`0x3A6759DD…`](https://sepolia.etherscan.io/address/0x3A6759DDb877aD4f370C9D5638FE886a6b0912D1), approvers [`0xFA9DA14A…`](https://sepolia.etherscan.io/address/0xFA9DA14AF7038A24B17Eb98d65b0BED278925733), legal [`0x12F22d6a…`](https://sepolia.etherscan.io/address/0x12F22d6a77F14815D8ac374715cad5d56ae41a2E)
-- **Reproduce the whole tree:** `npm run ens:setup -- <name> <approver>`. **Inspect it:** `npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth`.
+- **EAC split** (Sepolia):
+  - security admin grant [`0x07e6f01b…`](https://sepolia.etherscan.io/tx/0x07e6f01be423afa5acaeb25ea3f3a9b801c39c229fb87baa917da74ca42e05eb)
+  - gateway per-key grants [`0x84f0d540…`](https://sepolia.etherscan.io/tx/0x84f0d54084bdc6808d8798881c7c1dc4a2936263fb676b6f345d6a4266f6f319) (approver) and [`0x7922fe04…`](https://sepolia.etherscan.io/tx/0x7922fe04130492363fa7c3a66aeee95bc52e230e719b28848a3575c822a8ce0a) (auditRoot)
+  - gateway root roles revoked [`0x11d0c69d…`](https://sepolia.etherscan.io/tx/0x11d0c69dac2b0f20617731c7c07907ce3decbbd9dba1fb9e50292ab463a449fd)
+- **Reproduce the whole tree:** `npm run ens:setup -- <name> <approver>`, then `npm run ens:eac`. **Inspect it:** `npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth`.
 
 **AI agents:** each agent is an ENS name whose records *are* its egress policy. Changing `airlock.models` or `airlock.egress` on-chain changes what the agent is allowed to do on the next request, with no redeploy.
 
@@ -161,9 +166,9 @@ redactor/       rules + dictionary + Presidio + local-LLM recognizers, stream re
 approval/       approval queue/SSE, World ID 4.0 (IDKit) verifier, World ID for Agents (OIDC)
 registry/       ENSv2 resolvers/writer (viem), ens:setup (whole name tree), ens CLI
 audit/          hash-chained JSONL, Merkle root, ENS anchoring
-console/        single-page Console (chamber, hold-to-approve, linked redaction view, ledger, enroll, try it)
+console/        single-page Console (chamber, hold-to-approve, linked redaction view, ledger, live ENS panel, enroll, try it)
 skills/airlock/ agent skill: how an agent should use Airlock
-docs/           ARCHITECTURE (中文), SETUP, INTEGRATION-NOTES, REFERENCES
+docs/           ARCHITECTURE (中文), SETUP, INTEGRATION-NOTES, REFERENCES, SUBMISSION (form text, video script, checklist)
 ```
 
 ## Honest limitations
