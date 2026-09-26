@@ -168,7 +168,8 @@ const chain = mb
       },
     }
   : undefined;
-const audit = new JsonlAuditLog(path(env.AUDIT_FILE ?? "data/audit.jsonl"), env.GATEWAY_SECRET ?? "dev-secret-change-me", writer && ((root) => writer!.setText(auditName, "airlock.auditRoot", root)));
+// DEMO_AUDIT_SECRET: the demo's chain keeps verifying with the key it was signed with when GATEWAY_SECRET is rotated.
+const audit = new JsonlAuditLog(path(env.AUDIT_FILE ?? "data/audit.jsonl"), env.DEMO_AUDIT_SECRET ?? env.GATEWAY_SECRET ?? "dev-secret-change-me", writer && ((root) => writer!.setText(auditName, "airlock.auditRoot", root)));
 const approvalTimeoutMs = Number(env.APPROVAL_TIMEOUT_MS ?? 300_000);
 const approvals = new ApprovalStore(approvalTimeoutMs);
 
