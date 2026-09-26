@@ -45,11 +45,13 @@ export interface Policy {
   models: string; // glob, e.g. "claude-*"
   approverRole: string;
   ownerRole?: string;
+  /** High residual risk: how many *different* verified humans must approve (World ID proves they're distinct). */
+  highRiskQuorum?: number;
 }
 
 export type Route =
   | { kind: "auto" }
-  | { kind: "approval"; role: string }
+  | { kind: "approval"; role: string; quorum?: number }
   | { kind: "owner"; role: string }
   | { kind: "block"; reason: string };
 
@@ -78,6 +80,9 @@ export interface ApprovalRequest {
   /** Who asked (x-airlock-user) and why they need a frontier model (x-airlock-justification). */
   requester?: string;
   justification?: string;
+  /** Distinct humans required, and the approvals counted so far. */
+  quorum?: number;
+  approvals?: { approverName?: string; commitment?: string; method?: string; at: number }[];
 }
 
 export interface Decision {
@@ -85,6 +90,8 @@ export interface Decision {
   /** How the human proved themselves: IDKit (World ID 4.0), World ID for Agents (OIDC), or mock. */
   method?: "idkit" | "oidc" | "mock";
   identityBinding?: "commitment" | "name";
+  /** Everyone who approved (quorum > 1). */
+  approvers?: { name?: string; commitment?: string }[];
   reason?: string;
   approverCommitment?: string;
   approverName?: string;
@@ -118,6 +125,8 @@ export interface AuditRecord {
   /** Who asked, and how many fields were de-identified (counts only, never values). */
   requester?: string;
   deidentified?: number;
+  /** Approver names when more than one human had to approve. */
+  approvers?: string[];
   timestamp: number;
   hash: string;
   gatewaySig: string;

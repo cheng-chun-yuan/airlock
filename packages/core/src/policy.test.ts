@@ -14,3 +14,8 @@ test("decision table", () => {
   assert.equal(decide("restricted", low, policy, "claude-sonnet-5").kind, "block");
   assert.equal(decide("public", low, policy, "gpt-5").kind, "block");
 });
+
+test("high risk with a quorum needs several distinct approvers instead of the owner", () => {
+  assert.deepEqual(decide("confidential", high, { ...policy, highRiskQuorum: 2 }, "claude-sonnet-5"), { kind: "approval", role: "legal.approvers.acme.eth", quorum: 2 });
+  assert.deepEqual(decide("confidential", low, { ...policy, highRiskQuorum: 2 }, "claude-sonnet-5"), { kind: "approval", role: "legal.approvers.acme.eth" });
+});

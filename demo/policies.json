@@ -4,12 +4,14 @@
     "egress": "approval",
     "models": "gpt-*,claude-*",
     "approverRole": "legal.approvers.acme.eth",
-    "ownerRole": "owners.acme.eth"
+    "ownerRole": "owners.acme.eth",
+    "highRiskQuorum": 2
   },
   "public-agent.agents.acme.eth": {
     "maxClass": "internal",
     "egress": "auto",
     "models": "gpt-*,claude-*",
-    "approverRole": ""
+    "approverRole": "",
+    "highRiskQuorum": 2
   }
 }

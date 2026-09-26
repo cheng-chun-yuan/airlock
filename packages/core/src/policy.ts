@@ -25,6 +25,8 @@ export function decide(sourceClass: DataClass, risk: RiskResult, policy: Policy,
     return { kind: "block", reason: `${sourceClass} exceeds ${policy.agent} maxClass=${policy.maxClass}` };
   if (rank(sourceClass) <= rank("internal")) return { kind: "auto" };
   if (risk.level === "low") return { kind: "approval", role: policy.approverRole };
+  // High residual risk: several *different* humans (quorum from ENS), else the data owner, else nobody.
+  if ((policy.highRiskQuorum ?? 1) > 1) return { kind: "approval", role: policy.approverRole, quorum: policy.highRiskQuorum };
   if (policy.ownerRole) return { kind: "owner", role: policy.ownerRole };
   return { kind: "block", reason: `high residual risk (${risk.findings.join("; ")}) and no owner role` };
 }
