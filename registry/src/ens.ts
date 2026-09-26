@@ -81,11 +81,16 @@ export class EnsRoleRegistry implements RoleRegistry {
     await this.writer.setText(name, "airlock.approver", commitment);
   }
 
-  /** Unregisters the subname (ENS_APPROVER_REGISTRY) and clears the record, so nothing resolves any more. */
+  /**
+   * Unregisters the subname (ENS_APPROVER_REGISTRY): verified on-chain that this alone makes the approver resolve to
+   * nothing. Clearing the record is belt-and-braces and runs in the background, so a revocation costs one tx.
+   * Idempotent: an already-unregistered name is skipped.
+   */
   async revoke(name: string) {
     if (!this.writer) throw new Error("ENS writer not configured (ENS_PRIVATE_KEY / ENS_RESOLVER)");
-    await this.writer.unregister(normalize(name).split(".")[0]);
-    await this.writer.setText(name, "airlock.approver", "");
+    const label = normalize(name).split(".")[0];
+    if (await this.writer.isLive(label)) await this.writer.unregister(label);
+    void this.writer.setText(name, "airlock.approver", "").catch((e) => console.warn(`[ens] clearing ${name}: ${(e as Error).message.split("\n")[0]}`));
   }
 }
 
@@ -144,6 +149,12 @@ export class EnsWriter {
     if (current !== zeroAddress) return;
     const expiry = BigInt(Math.floor(Date.now() / 1000) + days * 86400);
     return this.write("register", [label, this.wallet.account.address, zeroAddress, this.resolver, APPROVER_TOKEN_ROLES, expiry]);
+  }
+
+  /** Is `label` currently registered (has a resolver) in the approver registry? */
+  async isLive(label: string): Promise<boolean> {
+    if (!this.approverRegistry) return true;
+    return (await this.client.readContract({ address: this.approverRegistry, abi: registryAbi, functionName: "getResolver", args: [label] })) !== zeroAddress;
   }
 
   async unregister(label: string): Promise<Hex | undefined> {
