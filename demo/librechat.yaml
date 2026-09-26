@@ -12,6 +12,8 @@ endpoints:
       titleModel: "local/Qwen/Qwen3.5-35B-A3B-FP8"
       modelDisplayLabel: "Airlock"
       headers:
-        x-airlock-agent: "contract-agent.agents.acme.eth"
+        x-airlock-agent: "contract-agent.agents.airlock.eth"
+        # Who is asking: shown to the approver and written to the audit log (check your LibreChat version supports user placeholders).
+        x-airlock-user: "{{LIBRECHAT_USER_EMAIL}}"
         # Check your LibreChat version supports body placeholders in headers; otherwise drop this line.
         x-airlock-session: "{{LIBRECHAT_BODY_CONVERSATIONID}}"

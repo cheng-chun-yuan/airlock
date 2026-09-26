@@ -54,6 +54,15 @@ Other tabs: **Queue** (every held request with the full airlock chamber), **Ledg
 | **ENS** | Everything read **live** from Sepolia: the agent's policy records and who may write each one, whether the on-chain audit root matches the local ledger (**Anchor now**), the access-control matrix per record key, an approver lookup, and the name tree. |
 | **Enroll** | Bind a World ID to an ENS approver name. The subname is created on-chain if it doesn't exist. |
 
+### Built for the people who use it
+| Who | What they get |
+|---|---|
+| **Employee** (talks to the agent) | Sends as themselves (`x-airlock-user`) with a **business reason** (`x-airlock-justification`). A **"Held for approval" card** in the chat says why, with a **Withdraw** button. The answer streams back with real names, or they see why it wasn't sent. |
+| **Approver** (holds the ENS role) | Sees **who asks and why**, the de-identified text (readable, or *as the model sees it*), and the risk. Then **holds to approve** (World ID) or **Seals** with an optional **note** to the requester. **Browser notifications** arrive when a request is waiting. |
+| **Security / compliance** | Live **ENS policy** and who may change it, a hash-chained **ledger** with stats (sent / cleared / sealed / fields kept private / tokens), **CSV/JSON export**, and one-click **anchoring** to ENS. Approvers can be **enrolled and revoked** from the ENS tab. |
+
+Patterns borrowed from products teams already know: DLP policy tips with business justification (Microsoft Purview), review with a comment (GitHub pull requests), approval notifications (Slack/Teams approvals), and audit export (Okta / Google Workspace).
+
 ---
 
 ## 🌍 World: Best Use of World ID for Agents
