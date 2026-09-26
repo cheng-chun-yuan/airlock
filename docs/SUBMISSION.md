@@ -29,7 +29,7 @@
 
 **Links:**
 - GitHub: https://github.com/cheng-chun-yuan/airlock
-- Live: https://airlock.polyoctant.com/?token=<AIRLOCK_ACCESS_TOKEN>. Put the real token in the form, not in git. Rotate it after judging.
+- Live: https://airlock.polyoctant.com. Sign in with any wallet; the shared demo gateway is open to every signed-in visitor, and anyone can create their own gateway.
 - ENS: https://app.ens.dev/airlock.eth
 
 ## Tracks
@@ -79,4 +79,4 @@ Two browser windows side by side: the **requester** on Playground, the **approve
 - [ ] `carol` is live again before recording (the Revoke segment unregisters her): Approvers → `carol.legal.approvers.airlock.eth` → Enroll with World ID. Always type the full ENS name.
 - [ ] For IDKit only: the staging window is open. It expires 24h after opening; reopen it via the Portal MCP `set_world_id_staging_verification`.
 - [ ] Fresh ledger for recording: stop the gateway, `rm data/audit.jsonl`, start it, then *Anchor now* at the end.
-- [ ] After judging: rotate `AIRLOCK_ACCESS_TOKEN`, the World OIDC client secret, the RP signing key and the Portal team API key.
+- [ ] After judging: rotate the World OIDC client secret, the RP signing key and the Portal team API key.

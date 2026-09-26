@@ -4,7 +4,7 @@
 
 **Airlock is an OpenAI-compatible gateway that stops AI agents from sending confidential data to frontier models unless a verified human with the right on-chain role approves that exact payload.**
 
-- **Live:** <https://airlock.polyoctant.com>. The access token is in the ETHGlobal submission.
+- **Live:** <https://airlock.polyoctant.com>. Sign in with any wallet (a signature, no transaction). Try the shared demo, or create your own gateway.
 - **ENS name:** [`airlock.eth`](https://app.ens.dev/airlock.eth) on ENSv2 Sepolia.
 - **Built at:** ETHGlobal Tokyo 2026.
 
@@ -32,9 +32,21 @@ agent ──OpenAI API──▶  Router → Redactor → Risk (local attack test
 
 ---
 
+## 🏗️ Your own gateway
+
+Anyone can run their own airlock, with their own models and people:
+
+1. **Sign in with a wallet** (SIWE: a signature, no gas).
+2. **Create a gateway.** Pick a name, e.g. `acme-legal` → **`acme-legal.airlock.eth`** is registered on Sepolia with its own resolver and registries, and your wallet holds every role on them. The policy (`policy.acme-legal.airlock.eth`), the approver role (`approvers.…`) and the audit anchor (`audit.…`) live under it.
+3. **Bring your models.** Local: the Airlock-hosted model, or any OpenAI-compatible endpoint you run (vLLM, Ollama, LM Studio; from a laptop, expose it with a tunnel). Frontier: Anthropic or any OpenAI-compatible API, with your key (encrypted at rest, never shown again).
+4. **Invite people** with a one-time link and a role: **member** (sends requests), **approver** (verifies once with World ID; gets `<name>.approvers.acme-legal.airlock.eth`), **admin** (settings and members).
+5. **Connect agents** with a per-member API key (`alk_…`). The key alone picks the gateway and the person: identity headers from clients are ignored, and an approver can only approve as themselves.
+
+Removing a member deletes their keys and revokes their approver name on ENS.
+
 ## 🧑‍⚖️ For judges: the 3-minute tour
 
-Open <https://airlock.polyoctant.com>. Airlock asks who you are once (name or work email; it's sent as `x-airlock-user` and written to the audit log).
+Open <https://airlock.polyoctant.com> and sign in with your wallet. Open **Airlock demo** (shared, every visitor can play every part), or create your own gateway (see *Your own gateway* below).
 
 | Page | What to do |
 |---|---|
@@ -200,7 +212,7 @@ npm run mb:setup                            # optional: index the ENS contracts 
 - **Zero config:** runs with a mock World ID and JSON policies.
 - **Real World ID, ENS, OIDC and egress:** see [docs/SETUP.md](docs/SETUP.md).
 - **Upstreams:** anything OpenAI-compatible (we use a local **codex-lb** with `gpt-5.6-sol`) or Anthropic directly. The ENS `airlock.models` record decides which models are allowed.
-- **Before exposing publicly:** set `AIRLOCK_ACCESS_TOKEN`. Clients send `Authorization: Bearer`; browsers open `/console?token=…` once.
+- **Before exposing publicly:** set `PUBLIC_URL` (the sign-in domain) and `GATEWAY_SECRET`. There is no shared access token: people sign in with a wallet, and agents use per-member API keys.
 
 ### Models
 | `model` | Behaviour |
