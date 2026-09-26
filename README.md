@@ -2,116 +2,172 @@
 
 > **Local AI by default. Frontier AI by human consent. Accountability on-chain.**
 
-Airlock is an OpenAI-compatible gateway that sits between your chat clients (LibreChat, agents, curl) and the models they use.
+**Airlock is an OpenAI-compatible gateway that stops AI agents from sending confidential data to frontier models unless a verified human with the right on-chain role approves that exact payload.**
 
-- **Local by default.** Requests go to a local model (vLLM on a GB10).
-- **Frontier only with consent.** A request reaches a frontier model (Claude) only after:
-  - **redaction**: sensitive entities are swapped for stable placeholders;
-  - a **policy decision**, read from ENS;
-  - for confidential data, a **human approval**: a World ID proof whose signal is bound to the exact redacted payload, plus an ENS role check for the approver.
-- **Real names restored locally.** Answers are rehydrated on the gateway, so the mapping table never leaves it.
-- **Everything is audited.** Every decision lands in a hash-chained log, and the log's Merkle root is anchored to ENS.
+- **Live demo:** <https://soil-foods-jam-conflicts.trycloudflare.com/console>. The access token is in the ETHGlobal submission.
+- **ENS name:** [`airlock.eth`](https://app.ens.dev/airlock.eth) on ENSv2 Sepolia.
+- **Built at:** ETHGlobal Tokyo 2026.
 
-Architecture (中文): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Design references (e.g. ideas borrowed from AI token gateways such as [ATP](https://atptoken.ai/zh-tw/); reference only, no service used): [docs/REFERENCES.md](docs/REFERENCES.md). Verified integration details for World ID 4.0 and ENSv2 on Sepolia: [docs/INTEGRATION-NOTES.md](docs/INTEGRATION-NOTES.md).
+Agents (LibreChat, Hermes, Claude Code, anything that speaks the OpenAI API) point at Airlock instead of a model provider. Every request goes through the same airlock:
 
 ```
-client ──▶ Router ─▶ Redactor ─▶ RiskScorer ─▶ PolicyResolver(ENS) ─▶ Approver(World ID + ENS role)
-                                                                          │
-           ◀── Rehydrator ◀── Egress(Claude, redacted only) ◀─────────────┘
-                     └────────▶ AuditSink (hash chain → Merkle root → ENS)
+                    ┌──────────── ENSv2 (Sepolia) · airlock.eth ────────────┐
+                    │ contract-agent.agents   → policy records               │
+                    │ legal.approvers → alice → approver commitment          │
+                    │ audit                   → Merkle root of the audit log │
+                    └───────────▲───────────────────────▲────────────────────┘
+                                │ policy / role          │ anchor
+agent ──OpenAI API──▶  Router → Redactor → Risk (local attack test) → Policy → Approver → Egress → Rehydrator → Audit
+  ▲                      │                                               │         │
+  └── real names ◀───────┘ local model (GB10 vLLM)           World ID for Agents   frontier model
+       restored locally      never leaves the box            (human approval)      (sees placeholders only)
 ```
 
-## Quick start
+1. **Redact.** Names, companies, amounts, emails and IDs become stable placeholders (`<ORG_1>`) within a session. The mapping never leaves the gateway.
+2. **Attack-test.** The local model tries to re-identify the placeholders. A correct guess is a measured leak and forces high risk.
+3. **Decide.** The agent's policy is read live from ENS: `public/internal` → send; `confidential` → human approval; `restricted` → never leaves.
+4. **Approve.** A verified human (World ID) whose ENS approver subname is live signs off on **this payload's hash**. Revoke the subname and they can't approve.
+5. **Egress + rehydrate.** Only the redacted text goes out, streamed. Real names are put back locally, including in tool-call arguments.
+6. **Audit.** Every decision is appended to a hash chain, and its Merkle root is anchored to `audit.airlock.eth`.
+
+---
+
+## 🧑‍⚖️ For judges: the 3-minute tour
+
+Open the live demo and click through the four tabs:
+
+| Tab | What to look for |
+|---|---|
+| **Try it** | *Public question* is sent straight out. *Confidential contract* is held at the door. *Re-identifiable* is caught by the local attack test. *Restricted data* never leaves. The answers stream in with real names restored. |
+| **Queue** | The request sits in the **airlock chamber**: Local → Redact → Policy → Human → Egress. Hover a `ORG·1` chip to see the real value, which stays local. Pick **World ID for Agents**, type `alice.legal.approvers.airlock.eth`, and **hold** the button (a tap does nothing). |
+| **Ledger** | Every decision is a hash-chained block. **Walk the chain** re-verifies it. **Anchor root to ENS** writes the Merkle root to `audit.airlock.eth`. |
+| **Enroll** | Bind a World ID to an ENS approver name. The subname is created on-chain if it doesn't exist. |
+
+---
+
+## 🌍 World: Best Use of World ID for Agents
+
+**The trust moment:** an AI agent is about to send confidential text (client names, contract terms, money) to a third-party frontier model. It's the one point where "the agent decided" isn't enough, and the action can't be undone once the bytes leave. Airlock pauses the agent there and needs a **verified human, holding a live approver role, to approve this exact payload**.
+
+**Why World ID for Agents (Human Continuity):**
+- Airlock needs to know that a **real human** consented to a specific agent action, not who that human is. Proof of personhood (`acr = …/orb-v3`) is the minimum sufficient assurance.
+- Authority comes from ENS, not from World: *which* humans may approve is an on-chain role that can be revoked.
+
+### Integration (the event's dev environment: `sandbox.auth.world.org`)
+| Step | Implementation |
+|---|---|
+| Request | Authorization code + **PKCE S256**. The OIDC `nonce` = `H(approvalId, payloadHash, salt)`, so World's signed ID token commits to this one operation. Source: [`approval/src/oidc.ts`](approval/src/oidc.ts). |
+| User completion | World's hosted ceremony, then back to `/oidc/callback`. |
+| Validated result (**backend only**) | Token exchange with `client_secret_basic` (the secret never reaches the browser). ID token verified against the issuer's **JWKS**: RS256, `iss`, `aud`, **`nonce` matches this operation**, `auth_time` ≤ 5 min. `state` is single use. |
+| Protected action | Only then does the payload leave. Approval is also re-checked for **payload hash equality** and **expiry** right before egress. Source: [`gateway/src/pipeline.ts`](gateway/src/pipeline.ts). |
+| Unsuccessful paths | Cancel at World (`access_denied`) → **denied, nothing sent**. Replayed callback → 403. Timeout → expired. Verified human **without a live ENS role**, or **revoked** → denied, nothing sent. Every one of these falls back to the local model and is audited. |
+
+All of the above was tested against the **real** `sandbox.auth.world.org`, with egress to a real frontier model; details in [docs/SETUP.md](docs/SETUP.md). Airlock also supports **IDKit (World ID 4.0 Proof of Human)** as a second approval method, with the signal bound to `payloadHash`. It was verified with real staging proofs through the World ID simulator.
+
+### Integration debrief
+- **Time to first success:**
+  - IDKit v4: about 30 minutes from app credentials to the first verified proof, most of it spent on the four issues below.
+  - World ID for Agents: about 15 minutes from client credentials to the first verified end-to-end approval, because we had built the flow against a mock IdP first.
+- **Friction we hit:**
+  1. `/api/v4/verify` answered **`app_not_migrated`** for an app whose RP was already registered. The fallback v2 endpoint then answered **"Action not found"**: v2 doesn't auto-create actions, while v4 does. We only found the fix (`create_world_id_action` via the Portal MCP) by probing both endpoints.
+  2. Staging proofs need a **24-hour staging verification window token** (`x-staging-verification-token`). This is only discoverable through the Portal MCP's instructions.
+  3. The **IDKit CDN build fails WASM init**. We now serve `idkit.global.js` and the `.wasm` from `node_modules`.
+  4. The docs say v4 **nullifiers are "one-time-use"**, yet the portal reports "nullifier reuse", and our tests show they're deterministic per (RP, action, human). We depend on that for role binding, so the docs should say so clearly.
+  5. The **Human Continuity sandbox issues a new `sub` on every sign-in** (a fresh test human, auto-completed ceremony). Apps therefore can't test *binding an identity to an account* in the sandbox. We added an explicit, audited **name-binding** mode for the sandbox: World proves a human approved this payload, and ENS proves the claimed approver is live. On production the mode is **commitment binding** (the enrolled identity must match).
+- **Missing capabilities:**
+  - a sandbox test user with a **stable `sub`**;
+  - a documented way to put **operation context** into the ceremony UI (what the human is approving);
+  - a verify-side check of the nonce/action binding, like `signal_hash` for IDKit.
+- **Priority improvements:**
+  1. a stable sandbox identity;
+  2. one page listing the v4 prerequisites (RP registration, action, staging token);
+  3. a CDN build that initializes WASM.
+
+---
+
+## 🔷 ENS: Best Use of ENSv2
+
+ENS isn't a label here; it is Airlock's **policy engine, role registry and audit anchor**. Every decision reads live records, and nothing is hardcoded.
+
+```
+airlock.eth                                   UserRegistry (own subregistry), no resolver
+├─ agents.airlock.eth                         UserRegistry, no resolver
+│   └─ contract-agent.agents.airlock.eth      PermissionedResolver
+│        airlock.maxClass     = confidential      ← highest data class this agent may send out
+│        airlock.egress       = approval          ← auto | approval | block
+│        airlock.models       = gpt-*,claude-*    ← frontier models it may use
+│        airlock.approverRole = legal.approvers.airlock.eth
+├─ approvers.airlock.eth                      UserRegistry, no resolver
+│   └─ legal.approvers.airlock.eth            UserRegistry, no resolver   ← the approver ROLE
+│       └─ alice.legal.approvers.airlock.eth  PermissionedResolver, 180-day expiry
+│            airlock.approver = commitment(World ID identity)   ← never the raw identifier
+└─ audit.airlock.eth                          PermissionedResolver
+     airlock.auditRoot = Merkle root of the gateway's hash-chained audit log
+```
+
+| ENSv2 feature | What it does in Airlock |
+|---|---|
+| **Hierarchical subname registries** (a `UserRegistry` per level) | Roles are namespaces: *being an approver* means holding a live subname under `legal.approvers.airlock.eth`. |
+| **Expiry + `unregister`** | Approvals expire with the subname. Revoking = unregistering → the next approval by that human is **denied**, and any session approval scope they opened ends too. |
+| **PermissionedResolver** (records keyed by name, `setText(bytes name, …)`) | One resolver serves every leaf. Policy, approver commitments and the audit root live there. |
+| **Enhanced Access Control** (role bitmaps per registry/resolver) | Registries and the resolver are initialized with explicit role grants, and subname tokens carry their own roles (unregister, renew, set resolver). *Today one owner key holds them; the next step is per-record-key `ROLE_SET_TEXT` grants, so only a security account can change policy keys and the gateway can only write `airlock.approver` / `airlock.auditRoot`.* |
+| **Universal Resolver v2** | The gateway reads everything through it, so any ENS client sees the same policy. |
+
+**Design finding:** the PermissionedResolver answers wildcard (ENSIP-10) lookups by full name. If a *parent* like `legal.approvers.airlock.eth` pointed at it, an **unregistered** `alice` would fall back to the parent's resolver and still resolve her commitment, so revocation would silently fail. **Only leaves get a resolver.** We verified on-chain that unregistering alone makes the approver resolve to nothing.
+
+**On-chain evidence** (Sepolia):
+- **Name:** `airlock.eth` registered in tx [`0x6452cf5e…`](https://sepolia.etherscan.io/tx/0x6452cf5e91c6c1437b237a6275f31f13d8c8b7f435b3d9efa21087e65656b377).
+- **Records:** multicall [`0x65292570…`](https://sepolia.etherscan.io/tx/0x65292570b9d3c029392dba4f00af8b22cadb61d01288a56cfbbd05cf4a89dbaa).
+- **Audit anchor:** [`0xf5c095b7…`](https://sepolia.etherscan.io/tx/0xf5c095b781713c5dc4291c038af79d51289cc11e1a461b78dbbe14a0fd49f758).
+- **Contracts:**
+  - PermissionedResolver [`0x0c47Bc81…`](https://sepolia.etherscan.io/address/0x0c47Bc813361aEB3d0aD84f8F642bCce0e34B7F4)
+  - registries: root [`0xcfAC3D22…`](https://sepolia.etherscan.io/address/0xcfAC3D225b371fe4dD1a939bb8bcd0B9697C61aa), agents [`0x3A6759DD…`](https://sepolia.etherscan.io/address/0x3A6759DDb877aD4f370C9D5638FE886a6b0912D1), approvers [`0xFA9DA14A…`](https://sepolia.etherscan.io/address/0xFA9DA14AF7038A24B17Eb98d65b0BED278925733), legal [`0x12F22d6a…`](https://sepolia.etherscan.io/address/0x12F22d6a77F14815D8ac374715cad5d56ae41a2E)
+- **Reproduce the whole tree:** `npm run ens:setup -- <name> <approver>`. **Inspect it:** `npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth`.
+
+**AI agents:** each agent is an ENS name whose records *are* its egress policy. Changing `airlock.models` or `airlock.egress` on-chain changes what the agent is allowed to do on the next request, with no redeploy.
+
+---
+
+## Run it
 
 ```bash
 npm install
-cp .env.example .env        # optional: works with zero config in mock mode
-npm start                   # gateway + console on :8787
-open http://localhost:8787/console
-npm test                    # unit tests
-npm run smoke               # e2e: approve / scope reuse / deny / non-approver / revoked, against a running gateway
-npm run ens -- check contract-agent.agents.acme.eth   # read ENS policy + approver + audit records
+npm start                                   # gateway + Console on :8787
+npm test                                    # 17 unit tests (redaction, policy, World ID, OIDC vs mock IdP, …)
+npm run ens -- check contract-agent.agents.airlock.eth
 ```
 
-With no config you get:
-- a local model at `http://localhost:8000/v1`;
-- a **mock** World ID verifier, with "Verify as alice/mallory" buttons in the Console;
-- policies and approvers from JSON: `demo/policies.json` and `data/approvers.json`, seeded from `demo/`.
+- **Zero config:** runs with a mock World ID and JSON policies.
+- **Real World ID, ENS, OIDC and egress:** see [docs/SETUP.md](docs/SETUP.md).
+- **Upstreams:** anything OpenAI-compatible (we use a local **codex-lb** with `gpt-5.6-sol`) or Anthropic directly. The ENS `airlock.models` record decides which models are allowed.
+- **Before exposing publicly:** set `AIRLOCK_ACCESS_TOKEN`. Clients send `Authorization: Bearer`; browsers open `/console?token=…` once.
 
-To turn on the real integrations, set these in `.env`:
-
-| Feature | Env |
+### Models
+| `model` | Behaviour |
 |---|---|
-| Claude egress | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` |
-| Self-configured OpenAI-compatible egress (e.g. your own LiteLLM) | `EGRESS_PROVIDER=openai`, `EGRESS_BASE_URL`, `EGRESS_API_KEY` |
-| Real World ID (staging works with simulator.worldcoin.org) | `WORLD_APP_ID`, `WORLD_RP_ID`, `WORLD_RP_SIGNING_KEY`, `WORLD_ENV` |
-| ENS policies and roles (read) | `SEPOLIA_RPC_URL` |
-| ENS enroll, revoke and audit anchoring (write) | `ENS_RESOLVER`, `ENS_PRIVATE_KEY`, `ENS_AUDIT_NAME` |
-| Presidio NER | `PRESIDIO_URL` (`docker compose up` starts the analyzer) |
+| `local/<name>` | Local model only. Nothing leaves. |
+| `airlock/<model>` | Full airlock: redact → attack test → ENS policy → (human approval) → egress → rehydrate. |
+| `auto` | Local first; escalates through the airlock only if the local answer is unsure. |
 
-## Models (`model` field)
-
-| Model | Behavior |
-|---|---|
-| `local/<name>` | Straight to the local model. Nothing leaves the box. |
-| `airlock/<claude-model>` | Full pipeline: redact → policy → (approve) → Claude → rehydrate. |
-| `auto` | Local first. Escalates through the Airlock pipeline only when the local answer is unsure. |
-
-Optional headers:
-- `x-airlock-session`: keeps placeholders stable across turns.
-- `x-airlock-agent`: the ENS name of the agent policy, default `contract-agent.agents.acme.eth`.
-
-Any failure path (blocked, denied, expired, role invalid, egress error) falls back to the local model's answer, prefixed with the reason. Responses carry an `airlock` metadata object and `x-airlock-route` / `x-airlock-decision` headers.
-
-## API
-
-- `POST /v1/chat/completions`, `GET /v1/models`: OpenAI-compatible, streaming included. The first stream chunk carries the `airlock` metadata.
-- `GET /approvals?status=pending`, `GET /approvals/:id`
-- `GET /approvals/:id/worldid`: IDKit request context (signed `rp_context`, `signal = payloadHash`).
-- `POST /approvals/:id/verify`: IDKit result, plus `approverName` (ENS subname).
-- `POST /approvals/:id/deny`
-- `GET /events`: SSE for the Console.
-- `GET /audit`, `POST /audit/anchor`
-- `GET /enroll/worldid?approverName=…`, `POST /enroll`: World ID → commitment → `airlock.approver` text record.
-- `POST /admin/revoke`: clears an approver's record. On ENS you can also `unregister` the subname.
+Headers:
+- `x-airlock-session`: keeps placeholders stable, and lets follow-ups reuse an approval when no new sensitive entity appears (the approver's ENS role is re-checked on every reuse).
+- `x-airlock-agent`: the ENS name of the agent's policy.
 
 ## Repo layout
-
 ```
-gateway/        Hono server: router, pipeline, egress, rehydrate, console serving
+gateway/        Hono server: router, pipeline (plan/execute, streaming), egress clients, access gate
 packages/core/  types, interfaces, policy decision table
-redactor/       rules + company dictionary + Presidio recognizers; rule-based risk scorer
-approval/       approval queue / SSE bus; World ID 4.0 verifier (+ mock)
-registry/       ENSv2 policy/role resolvers + setText writer (viem); JSON fallback
-audit/          JSONL hash chain, Merkle root, anchoring
-console/        single-page Console (queue, side-by-side redaction, World ID QR, audit)
-demo/           fake contract, dictionary, policies, LibreChat snippet, smoke test
+redactor/       rules + dictionary + Presidio + local-LLM recognizers, stream rehydrator, local attack test
+approval/       approval queue/SSE, World ID 4.0 (IDKit) verifier, World ID for Agents (OIDC)
+registry/       ENSv2 resolvers/writer (viem), ens:setup (whole name tree), ens CLI
+audit/          hash-chained JSONL, Merkle root, ENS anchoring
+console/        single-page Console (chamber, hold-to-approve, linked redaction view, ledger, enroll, try it)
+skills/airlock/ agent skill: how an agent should use Airlock
+docs/           ARCHITECTURE (中文), SETUP, INTEGRATION-NOTES, REFERENCES
 ```
 
-## Status
-
-**Done:**
-- Routing (`local/*`, `airlock/*`, `auto`) with **real token streaming**. Checks and approval finish before the first byte. A client that hangs up cancels the upstream, and the egress is still audited.
-- Redaction and rehydration with session-stable placeholders, including placeholders split across stream chunks. Recognizers run in this order: rules → company dictionary → Presidio → local-model tagging of indirect identifiers (`REDACT_LLM=1`).
-- **Local attack test** (`ATTACK_TEST`, on by default): before anything leaves, the local model tries to guess what's behind each placeholder. It's graded against the real mapping, so a hit is a measured leak and forces high risk.
-- The policy decision table, including owner escalation for high risk.
-- The approval flow: approve, deny, timeout, role-invalid and revoked.
-- **Approval scope reuse** (`APPROVAL_SCOPE_MS`): follow-ups in the same session with no new entities and no higher risk ride on an earlier approval. The approver's ENS role is re-checked on every reuse, so a revocation also ends the scope.
-- World ID 4.0 verification: RP signing, signal binding, replay guard.
-- ENS: `npm run ens:setup` builds the whole name tree on ENSv2 Sepolia; `npm run ens` does check / set-policy / enroll / revoke / anchor.
-- Hash-chain audit and a Merkle root, with per-request attribution (agent, token usage, `scopeOf`).
-- Pluggable egress: Anthropic directly, or a self-configured OpenAI-compatible upstream. The ENS model allow-list is still enforced.
-- The Console: airlock chamber, hold-to-approve, linked redaction view, hash-chain ledger, and a streamed "Try it" conversation.
-- An agent skill ([skills/airlock/SKILL.md](skills/airlock/SKILL.md)) and a Docker image.
-
-**Live and verified end to end (2026-09-26):**
-- **World ID 4.0** (staging, via the World ID simulator): real proofs for enrollment and approval, with the same nullifier on both, so the role check holds.
-- **ENSv2 on Sepolia:** `airlock.eth` with its policy, approver and audit records. Revoking by unregistering the subname → the next approval is `revoked`. Re-enrollment re-creates the subname. The audit root is anchored to `audit.airlock.eth`. See [docs/SETUP.md](docs/SETUP.md).
-
-- **Egress via codex-lb** (OpenAI-compatible, local, `gpt-5.6-sol`): confidential text is redacted → approved with World ID + ENS role → sent to codex-lb → rehydrated locally, with 0 placeholders left and token usage audited. `ANTHROPIC_API_KEY` is optional.
-
-**Deliberately not done:**
-- **Next.js Console:** the single HTML page is served by the gateway with no build step. That keeps the trust boundary to one process.
-- **Streaming tool-call deltas:** requests with `tools` use the buffered path.
-
-See [docs/INTEGRATION-NOTES.md](docs/INTEGRATION-NOTES.md) for the ENS setup checklist.
+## Honest limitations
+- The World ID for Agents sandbox issues a new `sub` per sign-in, so the demo uses **name binding**, which is audited. Commitment binding is the production mode.
+- The live demo runs on a Cloudflare quick tunnel to the machine we hacked on (GB10). The URL changes if the tunnel restarts.
+- Requests with `tools` use the buffered (non-streaming) path.
+- Redaction is rules + dictionary + optional Presidio/local LLM. It reduces what leaves; it doesn't prove nothing sensitive leaves, which is why the attack test and the human exist.
