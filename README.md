@@ -194,7 +194,7 @@ Without MultiBaas you'd need your own indexer, reorg handling and a webhook serv
 - **Webhooks can't be filtered** by contract or event, so every indexed event is delivered and filtering happens in the handler.
 - **The good parts:** event decoding with named inputs, aliases, and a clean HMAC scheme made the integration about 150 lines, with no indexer to run.
 
-**Team:** *(to fill: names and X/GitHub handles)*
+**Team:** Albert Cheng · GitHub [@cheng-chun-yuan](https://github.com/cheng-chun-yuan)
 
 ## Run it
 
