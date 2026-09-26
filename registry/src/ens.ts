@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, keccak256, parseAbi, toBytes, toHex, zeroAddress, type Hex, type PublicClient } from "viem";
+import { createPublicClient, createWalletClient, http, keccak256, namehash, parseAbi, toBytes, toHex, zeroAddress, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import { normalize, packetToBytes } from "viem/ens";
@@ -27,8 +27,8 @@ export class EnsPolicyResolver implements PolicyResolver {
   async resolve(agent: string): Promise<Policy> {
     const hit = this.cache.get(agent);
     if (hit && Date.now() - hit.at < this.cacheMs) return hit.p;
-    const [maxClass, egress, models, approverRole, ownerRole] = await Promise.all(
-      ["maxClass", "egress", "models", "approverRole", "ownerRole"].map((k) => text(this.client, agent, `airlock.${k}`)),
+    const [maxClass, egress, models, approverRole, ownerRole, quorum] = await Promise.all(
+      ["maxClass", "egress", "models", "approverRole", "ownerRole", "highRiskQuorum"].map((k) => text(this.client, agent, `airlock.${k}`)),
     );
     // Fail closed: a missing record means nothing leaves.
     const p: Policy = {
@@ -38,6 +38,7 @@ export class EnsPolicyResolver implements PolicyResolver {
       models: models ?? "",
       approverRole: approverRole ?? "",
       ownerRole: ownerRole ?? undefined,
+      highRiskQuorum: quorum && Number(quorum) > 1 ? Math.min(5, Number(quorum)) : undefined,
     };
     this.cache.set(agent, { at: Date.now(), p });
     return p;
@@ -148,36 +149,77 @@ export class EnsWriter {
 
 const inspectAbi = parseAbi([
   "function roles(uint256 resource, address account) view returns (uint256)",
+  "function getRecordId(bytes32 node) view returns (uint256)",
 ]);
 const ROLE_SET_TEXT = 1n << 4n;
-export const POLICY_KEYS = ["airlock.maxClass", "airlock.egress", "airlock.models", "airlock.approverRole", "airlock.ownerRole"];
+export const POLICY_KEYS = ["airlock.maxClass", "airlock.egress", "airlock.models", "airlock.approverRole", "airlock.ownerRole", "airlock.highRiskQuorum"];
 export const GATEWAY_KEYS = ["airlock.approver", "airlock.auditRoot"];
+
+/** Run at most `n` promises at once: public RPCs rate-limit bursts, and retries then cost far more than waiting. */
+function limiter(n: number) {
+  let active = 0;
+  const queue: (() => void)[] = [];
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= n) await new Promise<void>((r) => queue.push(r));
+    active++;
+    try {
+      return await fn();
+    } finally {
+      active--;
+      queue.shift()?.();
+    }
+  };
+}
 
 /** Read-only view of Airlock's ENS state for the Console: records, anchor, and who may write which key. */
 export class EnsInspector {
+  private limit = limiter(6);
   constructor(
     private client: PublicClient,
-    private cfg: { resolver?: Hex; agent: string; auditName: string; accounts: { label: string; address: Hex }[]; approverRegistry?: Hex },
+    private cfg: {
+      resolver?: Hex;
+      agent: string;
+      auditName: string;
+      accounts: { label: string; address: Hex }[];
+      approverRegistry?: Hex;
+      /** Agents to show, and the shared policy record they may be linked to (ENSv2 aliasing). */
+      agents?: string[];
+      sharedPolicy?: string;
+    },
   ) {}
 
   async status(localRoot: string) {
     const { agent, auditName, resolver } = this.cfg;
-    const policy = Object.fromEntries(await Promise.all(POLICY_KEYS.map(async (k) => [k, await text(this.client, agent, k)] as const)));
-    const auditRoot = await text(this.client, auditName, "airlock.auditRoot");
+    const policy = Object.fromEntries(await Promise.all(POLICY_KEYS.map(async (k) => [k, await this.limit(() => text(this.client, agent, k))] as const)));
+    const auditRoot = await this.limit(() => text(this.client, auditName, "airlock.auditRoot"));
     const keys = [...POLICY_KEYS, ...GATEWAY_KEYS];
     const access = resolver
       ? await Promise.all(
           this.cfg.accounts.map(async ({ label, address }) => {
-            const read = (resource: bigint) => this.client.readContract({ address: resolver, abi: inspectAbi, functionName: "roles", args: [resource, address] }).catch(() => 0n);
+            const read = (resource: bigint) => this.limit(() => this.client.readContract({ address: resolver, abi: inspectAbi, functionName: "roles", args: [resource, address] }).catch(() => 0n));
             const root = await read(0n);
             const perKey = await Promise.all(keys.map(async (k) => [k, !!((root | (await read(BigInt(keccak256(toBytes(k)))))) & ROLE_SET_TEXT)] as const));
             return { label, address, admin: (root & (ROLE_SET_TEXT << 128n)) !== 0n, canWrite: Object.fromEntries(perKey) };
           }),
         )
       : [];
+    // Where each agent's policy comes from: linked to the shared record, the resolver's default record
+    // (wildcard, for agents never registered), or its own record.
+    const recordId = (name: string) =>
+      resolver ? this.limit(() => this.client.readContract({ address: resolver, abi: inspectAbi, functionName: "getRecordId", args: [namehash(name)] }).catch(() => 0n)) : Promise.resolve(0n);
+    const sharedId = this.cfg.sharedPolicy ? await recordId(this.cfg.sharedPolicy) : 0n;
+    const agents = await Promise.all(
+      (this.cfg.agents ?? [agent]).map(async (name) => {
+        const id = await recordId(name);
+        const [maxClass, egress, quorum] = await Promise.all(["airlock.maxClass", "airlock.egress", "airlock.highRiskQuorum"].map((k) => this.limit(() => text(this.client, name, k))));
+        return { name, recordId: String(id), source: id === 0n ? "org default (wildcard)" : sharedId && id === sharedId ? `linked → ${this.cfg.sharedPolicy}` : "own record", maxClass, egress, quorum };
+      }),
+    );
     return {
       agent,
       policy,
+      sharedPolicy: this.cfg.sharedPolicy,
+      agents,
       approverRole: policy["airlock.approverRole"],
       audit: { name: auditName, onChain: auditRoot, local: localRoot, anchored: !!auditRoot && auditRoot.toLowerCase() === localRoot.toLowerCase() },
       resolver,
