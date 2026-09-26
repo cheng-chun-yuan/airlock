@@ -18,6 +18,7 @@ export function modelAllowed(glob: string, model: string): boolean {
  *   restricted                  -> always block (local only)
  */
 export function decide(sourceClass: DataClass, risk: RiskResult, policy: Policy, model: string): Route {
+  if (policy.unavailable) return { kind: "block", reason: `policy for ${policy.agent} unavailable (${policy.unavailable}); failing closed` };
   if (!modelAllowed(policy.models, model)) return { kind: "block", reason: `model ${model} not allowed by ${policy.agent}` };
   if (policy.egress === "block") return { kind: "block", reason: `egress disabled for ${policy.agent}` };
   if (sourceClass === "restricted") return { kind: "block", reason: "restricted data is local-only" };

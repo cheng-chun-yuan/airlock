@@ -47,6 +47,8 @@ export interface Policy {
   ownerRole?: string;
   /** High residual risk: how many *different* verified humans must approve (World ID proves they're distinct). */
   highRiskQuorum?: number;
+  /** Set when the policy source couldn't be read: the gateway fails closed and says why. */
+  unavailable?: string;
 }
 
 export type Route =

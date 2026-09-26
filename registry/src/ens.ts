@@ -19,6 +19,11 @@ export function ensClient(rpcUrl: string, universalResolverAddress?: Hex): Publi
 
 const text = (client: PublicClient, name: string, key: string) =>
   client.getEnsText({ name: normalize(name), key }).then((v) => v || null).catch(() => null);
+/** Like `text`, but an RPC failure is reported (and retried once) instead of reading as "record missing". */
+const textOrError = (client: PublicClient, name: string, key: string) => {
+  const once = () => client.getEnsText({ name: normalize(name), key }).then((v) => ({ v: v || null }));
+  return once().catch(once).catch((e: Error) => ({ v: null, error: (e as { shortMessage?: string }).shortMessage ?? e.message }));
+};
 
 export class EnsPolicyResolver implements PolicyResolver {
   constructor(private client: PublicClient, private cacheMs = 10_000) {}
@@ -32,9 +37,13 @@ export class EnsPolicyResolver implements PolicyResolver {
   async resolve(agent: string): Promise<Policy> {
     const hit = this.cache.get(agent);
     if (hit && Date.now() - hit.at < this.cacheMs) return hit.p;
-    const [maxClass, egress, models, approverRole, ownerRole, quorum] = await Promise.all(
-      ["maxClass", "egress", "models", "approverRole", "ownerRole", "highRiskQuorum"].map((k) => text(this.client, agent, `airlock.${k}`)),
+    const reads = await Promise.all(
+      ["maxClass", "egress", "models", "approverRole", "ownerRole", "highRiskQuorum"].map((k) => textOrError(this.client, agent, `airlock.${k}`)),
     );
+    const failed = reads.find((r) => "error" in r) as { error: string } | undefined;
+    // An unreadable policy blocks this request but isn't cached: the next request reads ENS again.
+    if (failed) return { agent, maxClass: "internal", egress: "block", models: "", approverRole: "", unavailable: `ENS read failed: ${failed.error.slice(0, 80)}` };
+    const [maxClass, egress, models, approverRole, ownerRole, quorum] = reads.map((r) => r.v);
     // Fail closed: a missing record means nothing leaves.
     const p: Policy = {
       agent,
