@@ -102,7 +102,7 @@
   .stages::before { content:""; position:absolute; left:10%; right:10%; top:27px; height:2px; background:var(--hairline); }
   .st { position:relative; text-align:center; padding:0 4px; }
   .st .node { width:24px; height:24px; margin:0 auto 8px; border-radius:99px; border:2px solid var(--sand); background:var(--canvas); position:relative; z-index:1; display:grid; place-items:center; font:600 11px var(--mono); color:var(--sand); }
-  .st b { display:block; font:600 11px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+  .st b { display:block; font:600 11px var(--mono); letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
   .st span { display:block; font-size:12px; color:var(--umber); line-height:1.35; margin-top:2px; }
   .st.done .node { border-color:var(--ink); background:var(--ink); color:var(--canvas); }
   .st.active .node { border-color:var(--hold); color:var(--hold); animation:pulse 1.4s ease-in-out infinite; }
@@ -237,6 +237,10 @@
   .demo-state.idle { background:var(--haze); color:var(--umber); } .demo-state.held { background:var(--hold-tint); color:var(--hold); }
   .demo-state.cleared, .demo-state.auto { background:var(--go-tint); color:var(--go); } .demo-state.sealed { background:var(--ember-tint); color:var(--ember); }
   .demo-state.local { background:var(--haze); color:var(--ink); }
+  .chip.rd { font:500 12.5px var(--body); padding:0 5px 0 3px; }
+  .chip.rd .rl { font:600 9.5px var(--mono); letter-spacing:.04em; background:var(--ember); color:#fff; border-radius:3px; padding:0 4px; margin-right:4px; vertical-align:1px; }
+  .box-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:6px 0 6px; flex-wrap:wrap; }
+  .box-head .eyebrow { margin:0; }
   .redacted-box { font:12.5px/1.7 var(--mono); white-space:pre-wrap; background:var(--haze); border-radius:10px; padding:12px; max-height:210px; overflow:auto; margin:0; }
   .riskline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px; margin:10px 0 0; }
   .demo-decide { margin-top:auto; padding-top:14px; border-top:1px solid var(--faint); display:grid; gap:10px; }
@@ -403,7 +407,7 @@ function stagesFor(r) {
   const egress = r.status === "approved" ? "done" : r.status === "pending" ? "" : "fail";
   const humanSub = r.auto ? "not needed" : { pending:"waiting", approved:"World ID ✓ role ✓", role_invalid:"role check failed", proof_invalid:"proof rejected", denied:"denied", expired:"timed out" }[r.status];
   return {
-    stages:[["done", "Local", "kept on-box"], ["done", "Redact", `${nMasked} masked`], ["done", "Policy", `ENS · risk ${r.riskLevel}`], [human, "Human", humanSub], [egress, "Egress", r.status === "approved" ? `→ ${r.targetModel}` : r.status === "pending" ? "door shut" : "sealed"]],
+    stages:[["done", "Local", "kept on-box"], ["done", "De-identify", `${nMasked} replaced`], ["done", "Policy", `ENS · risk ${r.riskLevel}`], [human, "Human", humanSub], [egress, "Egress", r.status === "approved" ? `→ ${r.targetModel}` : r.status === "pending" ? "door shut" : "sealed"]],
     outer:r.status === "approved" ? "open" : r.status === "pending" ? "" : "sealed",
   };
 }
@@ -411,7 +415,7 @@ function stagesFor(r) {
 function chamberHTML(r) {
   const { stages, outer } = stagesFor(r);
   const lis = r ? stages.map(([cls, name, sub], i) => `<li class="st ${cls}"><div class="node">${cls === "done" ? "✓" : cls === "fail" ? "×" : i + 1}</div><b>${name}</b><span>${esc(sub)}</span></li>`).join("")
-    : ["Local", "Redact", "Policy", "Human", "Egress"].map((n, i) => `<li class="st"><div class="node">${i + 1}</div><b>${n}</b><span>&nbsp;</span></li>`).join("");
+    : ["Local", "De-identify", "Policy", "Human", "Egress"].map((n, i) => `<li class="st"><div class="node">${i + 1}</div><b>${n}</b><span>&nbsp;</span></li>`).join("");
   return `<div class="chamber"><div class="door open" data-label="LOCAL"><i></i><i></i></div><ol class="stages">${lis}</ol><div class="door outer ${outer}" data-label="FRONTIER" id="outerDoor"><i></i><i></i></div></div>`;
 }
 
@@ -455,8 +459,8 @@ async function show(id) {
       <div class="legend">${ents.map(([t, n]) => `<button data-type="${t}"><b>${n}</b> ${t}</button>`).join("") || `<span class="muted mono" style="font-size:12px">nothing masked</span>`}</div>
     </div>
     <div class="panes ${view === "split" ? "" : "one"}">
-      ${view !== "out" ? `<div class="pane"><h4><span>Original</span><span>never leaves</span></h4><pre>${original}</pre></div>` : ""}
-      ${view !== "in" ? `<div class="pane"><h4><span>Redacted</span><span>hover a chip</span></h4><pre>${redacted}</pre></div>` : ""}
+      ${view !== "out" ? `<div class="pane"><h4><span>Original</span><span>never leaves this machine</span></h4><pre>${original}</pre></div>` : ""}
+      ${view !== "in" ? `<div class="pane"><h4><span>De-identified</span><span>what the model sees</span></h4><pre>${redacted}</pre></div>` : ""}
     </div>
     <details class="more"><summary>Details · hashes, policy, risk</summary><div class="facts">
       <div class="fact"><div class="k">Residual risk · ${r.riskLevel}</div><div class="meter ${r.riskLevel}">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= score ? "on" : ""}"></i>`).join("")}</div>
@@ -666,13 +670,21 @@ const CONTRACT = "CONFIDENTIAL. Review this clause for Kestrelwood Analytics: \"
 const role = () => `legal.approvers.${(cfg.defaultAgent ?? "x.agents.airlock.eth").split(".").slice(-2).join(".")}`;
 const SCENES = () => [
   { t:"Public", title:"Public data goes straight out", note:"No sensitive entities → sent to the frontier model immediately. Still audited.", prompt:"In one sentence: why does an airlock have two doors?" },
-  { t:"Confidential", title:"Confidential data waits for a human", note:"Names, money and email are redacted. Hover a chip to see the real value (it never leaves). Hold to approve with World ID for Agents; the answer streams back with real names restored.", prompt:CONTRACT, approver:"alice" },
+  { t:"Confidential", title:"Confidential data waits for a human", note:"De-identified first: names, money and email become labels (ORG·1, PERSON·1…). You can read the names; the model only gets the labels. Hold to approve with World ID for Agents; the answer streams back with the real names restored.", prompt:CONTRACT, approver:"alice" },
   { t:"Seal", title:"Seal it: nothing leaves", note:"Same request, but the reviewer presses Seal (or cancels at World). The frontier model never sees it; the local model answers instead.", prompt:CONTRACT, approver:"alice", hint:"Press Seal" },
   { t:"Revoked", title:"A verified human whose role was revoked", note:"Carol is a real human, but her ENS approver subname has been unregistered. World ID passes, the ENS role check fails, and nothing is sent.", prompt:CONTRACT, approver:"carol", pre:{ label:"Revoke carol on ENS", run:revokeCarol } },
-  { t:"Re-identified", title:"When context gives the secret away", note:"The name is redacted, but the context isn't. Before anything leaves, the local model tries to re-identify the placeholders; it guesses the company, so risk is high and the data owner's role is required.", prompt:"CONFIDENTIAL. Our client TSMC, the Hsinchu-based foundry that manufactures Apple's A-series chips and is the world's largest contract chipmaker, wants to renegotiate volume pricing. Draft two talking points.", approver:"alice", hint:"High risk → needs owners role → Seal" },
+  { t:"Re-identification", title:"Re-identification test: context gives it away", note:"TSMC is de-identified to ORG·1, but the surrounding text still describes it. Before anything leaves, the local model plays attacker and tries to re-identify each label. It guesses the company, so risk goes high and only the data owner's role could approve.", prompt:"CONFIDENTIAL. Our client TSMC, the Hsinchu-based foundry that manufactures Apple's A-series chips and is the world's largest contract chipmaker, wants to renegotiate volume pricing. Draft two talking points.", approver:"alice", hint:"High risk → needs owners role → Seal" },
   { t:"Proof", title:"Every decision is on the record", note:"The ledger is a hash chain; its Merkle root is anchored to audit.airlock.eth. The agent's policy and who may change it live in ENS.", proof:true },
 ];
-let sceneIdx = 0, demo = { inflight:false, id:null, meta:null, session:null, done:new Set() };
+let sceneIdx = 0, demo = { inflight:false, id:null, meta:null, session:null, done:new Set() }, deidView = "readable";
+/** De-identified text, readable for the local reviewer: real name + its label. The model only ever gets the label. */
+function deidReadable(r) {
+  const map = r.mapping ?? {};
+  return esc(r.redactedPreview).replace(/^\[user\] /gm, "").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, (m, type, n) => {
+    const real = map[`<${type}_${n}>`];
+    return real ? `<span class="chip rd" data-ph="${type}_${n}" data-type="${type}"><span class="rl">${type}·${n}</span>${esc(real)}</span>` : `<span class="chip">${type}·${n}</span>`;
+  });
+}
 function renderScenes() {
   $("#scenes").innerHTML = SCENES().map((x, i) => `<li><button data-i="${i}" class="${i === sceneIdx ? "on" : ""} ${demo.done.has(i) ? "done" : ""}"><b>${String(i + 1).padStart(2, "0")}</b><span>${x.t}</span></button></li>`).join("");
   $$("#scenes button").forEach((b) => (b.onclick = () => { sceneIdx = +b.dataset.i; renderScene(); }));
@@ -749,7 +761,7 @@ async function demoSend(text, history, scene) {
 }
 function renderTrace(a) {
   const masked = a.entities ? Object.values(a.entities).reduce((x, y) => x + y, 0) : 0;
-  $("#demoTrace").innerHTML = [a.sourceClass && `class ${a.sourceClass}`, masked && `${masked} masked`, a.risk && `risk ${a.risk.level}`, `decision ${a.decision}`, a.egressed ? "left the building" : "stayed local"].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("");
+  $("#demoTrace").innerHTML = [a.sourceClass && `class ${a.sourceClass}`, masked && `${masked} de-identified`, a.risk && `risk ${a.risk.level}`, `decision ${a.decision}`, a.egressed ? "left the building" : "stayed local"].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("");
 }
 const STATE = { pending:["held", "Held at the door"], approved:["cleared", "Cleared"], denied:["sealed", "Sealed"], expired:["sealed", "Expired"], role_invalid:["sealed", "Role check failed"], proof_invalid:["sealed", "Proof rejected"] };
 async function renderAirlock(r, phase) {
@@ -768,9 +780,10 @@ async function renderAirlock(r, phase) {
     return;
   }
   const [cls, label] = STATE[r.status] ?? ["idle", r.status];
-  const redacted = linkify(r).redacted.replace(/^\[user\] /gm, "");
+  // Model view: labels only, no hover tooltips carrying real names — literally what leaves.
+  const redacted = esc(r.redactedPreview).replace(/^\[user\] /gm, "").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, (m, type, n) => `<span class="chip">${type}·${n}</span>`);
   const x = SCENES()[demo.scene ?? sceneIdx] ?? {};
-  const findings = r.findings?.length ? " · " + r.findings.map((f) => esc(f).replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, "$1·$2")).join(" · ") : "";
+  const findings = r.findings?.length ? " · " + r.findings.map((f) => esc(f).replace(/^local attacker re-identified/, "re-identification test cracked").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, "$1·$2")).join(" · ") : "";
   let bottom;
   if (r.status === "pending") {
     // Only pre-fill when the scene's approver actually holds this role (scene 5 needs a data owner nobody holds).
@@ -786,8 +799,11 @@ async function renderAirlock(r, phase) {
     bottom = `<div class="demo-verdict ${cls}"><b>${esc(label.toUpperCase())}</b>${esc(r.reason ?? (r.status === "approved" ? "Verified human with a live ENS approver role. Only the redacted text above left the building." : ""))}</div>`;
   }
   box.innerHTML = head(cls, label) + chamberHTML(r) +
-    `<p class="eyebrow" style="margin:4px 0 6px">What the frontier model would see <span class="muted" style="text-transform:none; letter-spacing:0">· hover a chip</span></p><pre class="redacted-box">${redacted}</pre>` +
+    `<div class="box-head"><p class="eyebrow">De-identified <span class="muted" style="text-transform:none; letter-spacing:0">· ${deidView === "readable" ? "names shown for you; the model only gets the labels" : "exactly what leaves the building"}</span></p>` +
+    `<div class="seg" id="deidSeg">${[["readable", "Readable"], ["model", "As the model sees it"]].map(([k, l]) => `<button data-d="${k}" class="${deidView === k ? "on" : ""}">${l}</button>`).join("")}</div></div>` +
+    `<pre class="redacted-box">${deidView === "readable" ? deidReadable(r) : redacted}</pre>` +
     `<div class="riskline"><span class="tag ${r.riskLevel === "high" ? "denied" : "approved"}">risk ${esc(r.riskLevel)}</span><span class="muted">${Object.entries(r.entities).map(([k, v]) => `${v} ${k}`).join(" · ")}${findings}</span></div>` + bottom;
+  $$("#deidSeg button", box).forEach((b) => (b.onclick = () => { deidView = b.dataset.d; renderAirlock(r); }));
   if (r.status === "pending") {
     wireVia(box);
     $("#demoSeal").onclick = async () => { sealFlash(); await post(`/approvals/${r.id}/deny`, { reason:"sealed by reviewer" }); };
