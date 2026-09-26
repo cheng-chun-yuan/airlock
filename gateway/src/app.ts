@@ -1,4 +1,6 @@
+import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { getCookie, setCookie } from "hono/cookie";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { Hono } from "hono";
@@ -24,12 +26,38 @@ export interface AppDeps {
   /** One fixed World ID action for enroll + approve, so the (legacy) nullifier is stable per person. */
   approveAction: string;
   ensLink?: (root: string) => string;
+  /** When set, every route except health / static IDKit / OIDC callback needs this token. */
+  accessToken?: string;
 }
 
 const enrollSignal = (name: string) => `airlock-enroll:${name}`;
 
 export function buildApp(d: AppDeps) {
   const app = new Hono();
+
+  // Access gate for public deployments (e.g. behind a tunnel). Clients send `Authorization: Bearer <token>`;
+  // browsers open /console?token=<token> once, which sets an HttpOnly cookie and strips the token from the URL.
+  if (d.accessToken) {
+    const want = Buffer.from(d.accessToken);
+    const ok = (v?: string | null) => !!v && v.length === d.accessToken!.length && timingSafeEqual(Buffer.from(v), want);
+    const open = (p: string) => p === "/health" || p === "/oidc/callback" || p.startsWith("/vendor/");
+    app.use("*", async (c, next) => {
+      const url = new URL(c.req.url);
+      if (open(url.pathname)) return next();
+      const q = url.searchParams.get("token");
+      if (ok(q)) {
+        const secure = c.req.header("x-forwarded-proto") === "https" || url.protocol === "https:";
+        setCookie(c, "airlock_token", q!, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 7 * 86400 });
+        url.searchParams.delete("token");
+        return c.redirect(url.pathname + (url.search || ""));
+      }
+      const bearer = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+      if (ok(bearer) || ok(getCookie(c, "airlock_token"))) return next();
+      if (c.req.method === "GET" && (url.pathname === "/" || url.pathname === "/console"))
+        return c.html(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airlock</title><body style="font:15px/1.6 system-ui;max-width:420px;margin:18vh auto;padding:0 16px"><p style="font:500 11px ui-monospace,monospace;letter-spacing:.2em">AIRLOCK</p><h2 style="margin:.2em 0 12px">This console is locked</h2><form method="get" action="/console"><input name="token" type="password" placeholder="access token" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font:14px ui-monospace,monospace"><button style="margin-top:10px;padding:9px 18px;border:0;border-radius:99px;background:#141414;color:#fff;font:600 14px system-ui">Enter</button></form></body>`, 401);
+      return c.json({ error: { message: "missing or invalid Airlock access token", type: "authentication_error" } }, 401);
+    });
+  }
 
   // ---------- Gateway (clients) ----------
   app.get("/v1/models", (c) =>

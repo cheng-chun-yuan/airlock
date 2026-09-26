@@ -111,6 +111,7 @@ const app = buildApp({
   claudeModels: (env.EGRESS_MODELS ?? env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
   consoleHtml: readFileSync(path("console/index.html"), "utf8"),
   approveAction: env.WORLD_ACTION ?? "airlock-approve",
+  accessToken: env.AIRLOCK_ACCESS_TOKEN || undefined,
   ensLink: env.SEPOLIA_RPC_URL ? () => `https://app.ens.dev/${auditName}` : undefined,
   publicConfig: {
     worldIdMode: verifier.mode,
