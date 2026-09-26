@@ -22,7 +22,7 @@ Total with intro and outro ≈ 2:50. Timecodes are positions in the cut video. S
 > Carol is an approver. I revoke her ENS subname on Sepolia. It's one transaction, and MultiBaas pushes the event to the gateway right away. She's still a verified human, but her role is gone, so nothing is sent.
 
 **[1:14 · 05 Two humans]**
-> Here the name TSMC is hidden, but the context gives it away, and our re-identification test catches it. High risk means the ENS policy requires two different humans. Alice approves: one of two. Now "Bob" tries with the same World ID, and it's refused. World ID knows it's the same person, without knowing who. An account system can't do that without KYC. A real second human approves, and it goes out.
+> Here the name TSMC is hidden, but the context gives it away, and our re-identification test catches it. High risk means the ENS policy requires two different humans. Bob approves: one of two. Now I try again as "Alice", with the same World ID, and it's refused. World ID knows it's the same person, without knowing who. An account system can't do that without KYC. Only a second, different human can release it.
 
 **[1:55 · 06 New agent]**
 > A brand-new agent that nobody registered gets the org's default policy through ENSv2 wildcard resolution. Confidential data is blocked, with zero setup.
