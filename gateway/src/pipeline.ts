@@ -222,7 +222,8 @@ export class Pipeline {
   }
 
   private notice(targetModel: string, reason: string) {
-    return `> ⚠️ Airlock: not sent to ${targetModel} — ${reason}. Answered by local model.\n\n`;
+    // Reviewer notes often end in their own punctuation ("…instead."); don't add a second period.
+    return `> ⚠️ Airlock: not sent to ${targetModel} — ${reason.replace(/[.!?。]+\s*$/, "")}. Answered by local model.\n\n`;
   }
 
   /** Router: dispatch on the `model` field. */
