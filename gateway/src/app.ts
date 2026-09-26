@@ -216,9 +216,12 @@ export function buildApp(d: AppDeps) {
   });
 
   // ---------- World ID for Agents (Human Continuity OIDC) ----------
+  // Opened as a popup by the Console (so the agent's stream keeps running): tell the opener and close.
+  // Opened directly: go back to the Console after a moment.
   const page = (title: string, body: string, next?: string) =>
-    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${next ? `<meta http-equiv="refresh" content="3;url=${next}">` : ""}` +
-    `<body style="font:15px/1.6 system-ui;max-width:560px;margin:12vh auto;padding:0 16px;color:#141414"><p style="font:500 11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:#6f6f6f">Airlock · World ID for Agents</p><h2 style="margin:.2em 0">${title}</h2><p>${body}</p>${next ? `<p><a href="${next}">Back to the console →</a></p>` : ""}</body>`;
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
+    `<body style="font:15px/1.6 system-ui;max-width:560px;margin:12vh auto;padding:0 16px;color:#141414"><p style="font:500 11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:#6f6f6f">Airlock · World ID for Agents</p><h2 style="margin:.2em 0">${title}</h2><p>${body}</p>${next ? `<p><a href="${next}">Back to the console →</a></p>` : ""}` +
+    `<script>if (window.opener) { try { window.opener.postMessage({ airlock: "worldid-done" }, location.origin); } catch (e) {} setTimeout(() => window.close(), 600); }${next ? ` else setTimeout(() => (location.href = ${JSON.stringify(next)}), 2500);` : ""}</script></body>`;
   const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
 
   app.get("/approvals/:id/oidc", async (c) => {
@@ -271,7 +274,11 @@ export function buildApp(d: AppDeps) {
         ? { status: "approved", ...who }
         : { status: "role_invalid", reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, ...who },
     );
-    return c.redirect(`/console#${req.id}`);
+    return c.html(
+      roleCheck === "valid"
+        ? page("Approved", `Verified human · <b>${esc(r.pending.approverName)}</b> holds a live ${esc(req.requiredRole)} role. The outer door opens.`, `/console#${req.id}`)
+        : page("Role check failed", `Verified human, but <b>${esc(r.pending.approverName)}</b> is ${esc(roleCheck)} for ${esc(req.requiredRole)}. Nothing was sent.`, `/console#${req.id}`),
+    );
   });
 
   // ---------- Console ----------

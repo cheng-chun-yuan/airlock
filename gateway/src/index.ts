@@ -130,6 +130,7 @@ const app = buildApp({
   ensLink: env.SEPOLIA_RPC_URL ? () => `https://app.ens.dev/${auditName}` : undefined,
   publicConfig: {
     worldIdMode: verifier.mode,
+    defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
     worldIdAgents: !!oidc,
     oidcBinding: oidc ? (env.WORLD_OIDC_BINDING ?? (/sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment")) : undefined,
     ensMode,
