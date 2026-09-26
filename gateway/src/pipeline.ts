@@ -337,8 +337,11 @@ export class Pipeline {
       targetModel,
       requester: opts.user,
       justification: opts.justification,
+      quorum: route.kind === "approval" ? route.quorum ?? 1 : 1,
+      approvals: [],
       createdAt: Date.now(),
-      expiresAt: Date.now() + d.approvalTimeoutMs,
+      // Each additional human gets their own window: two people approving one after the other takes longer.
+      expiresAt: Date.now() + d.approvalTimeoutMs * (route.kind === "approval" ? route.quorum ?? 1 : 1),
       status: "pending" as const,
     };
     meta.approvalId = req.id;
@@ -369,6 +372,7 @@ export class Pipeline {
         worldIdVerified: decision.worldIdVerified,
         approvalMethod: decision.method,
         identityBinding: decision.identityBinding,
+        approvers: decision.approvers?.map((a) => a.name ?? "?"),
       },
     };
   }

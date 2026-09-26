@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { ChatMessage, Decision, RoleRegistry } from "@airlock/core";
+import type { ApprovalRequest, ChatMessage, Decision, RoleCheck, RoleRegistry } from "@airlock/core";
 import { publicView, type AirlockEvent, type ApprovalStore, type ProofVerifier, type WorldIdProof, type WorldOidc } from "@airlock/approval";
 import { commitmentOf } from "@airlock/registry";
 import type { JsonlAuditLog } from "@airlock/audit";
@@ -19,8 +19,11 @@ export interface AppDeps {
   verifier: ProofVerifier;
   /** World ID for Agents (Human Continuity OIDC); optional second way to approve/enroll. */
   oidc?: WorldOidc;
-  /** "commitment": the World identity must match the enrolled one. "name": live ENS subname only (sandbox issues a new sub per sign-in). */
-  oidcBinding?: "commitment" | "name";
+  /**
+   * How an approver is tied to their ENS role. "commitment": the World identity must match the one enrolled
+   * on ENS (production). "name": the claimed approver subname must be live (staging / sandbox test identities).
+   */
+  binding?: "commitment" | "name";
   localModel: string;
   claudeModels: string[];
   consoleHtml: string;
@@ -36,8 +39,42 @@ export interface AppDeps {
 
 const enrollSignal = (name: string) => `airlock-enroll:${name}`;
 
+export type GrantOutcome =
+  | { status: "approved" | "partial"; have: number; need: number; roleCheck: RoleCheck }
+  | { status: "role_invalid" | "same-human" | "same-name" | "not-pending"; have: number; need: number; roleCheck?: RoleCheck; reason: string };
+
 export function buildApp(d: AppDeps) {
   const app = new Hono();
+
+  /**
+   * A verified human claims an approver name. Check the ENS role, then count them toward the request's quorum:
+   * one approval for normal requests; for high risk, `airlock.highRiskQuorum` *different* humans (World identity
+   * commitments must differ, so one person can't approve twice under two names).
+   */
+  async function grant(req: ApprovalRequest, who: { approverName?: string; commitment: string; method: NonNullable<Decision["method"]> }): Promise<GrantOutcome> {
+    const binding = d.binding === "name" && d.roles.isLiveApprover ? ("name" as const) : ("commitment" as const);
+    const name = who.approverName ?? "";
+    const roleCheck = binding === "name" ? await d.roles.isLiveApprover!(req.requiredRole, name) : await d.roles.isValidApprover(who.commitment, req.requiredRole, name);
+    const need = req.quorum ?? 1, have = req.approvals?.length ?? 0;
+    const base = { method: who.method, identityBinding: binding, approverCommitment: who.commitment, approverName: name, roleCheck, worldIdVerified: who.method !== "mock" };
+    if (roleCheck !== "valid") {
+      const reason = `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`;
+      // One bad approver shouldn't kill a two-person request that's already half approved.
+      if (have === 0) d.approvals.resolve(req.id, { status: "role_invalid", reason, ...base });
+      else d.approvals.emitEvent({ type: "approval.refused", requestId: req.id, approverName: name, reason });
+      return { status: "role_invalid", have, need, roleCheck, reason };
+    }
+    const c = d.approvals.count(req.id, { approverName: name, commitment: who.commitment, method: who.method, identityBinding: binding });
+    if (c.result === "approved" || c.result === "partial") return { status: c.result, have: c.have, need: c.need, roleCheck };
+    const reason = {
+      "same-human": "World ID says this is the same person who already approved. A different human must approve.",
+      "same-name": `${name} already approved. A different approver must approve.`,
+      "not-pending": "This request is no longer waiting for approval.",
+    }[c.result];
+    // Tell every open Console why this attempt didn't count (the approver may be in a popup or on another screen).
+    if (c.result !== "not-pending") d.approvals.emitEvent({ type: "approval.refused", requestId: req.id, approverName: name, reason });
+    return { status: c.result, have: c.have, need: c.need, roleCheck, reason };
+  }
 
   // Access gate for public deployments (e.g. behind a tunnel). Clients send `Authorization: Bearer <token>`;
   // browsers open /console?token=<token> once, which sets an HttpOnly cookie and strips the token from the URL.
@@ -160,16 +197,12 @@ export function buildApp(d: AppDeps) {
       const method = d.verifier.mode === "mock" ? ("mock" as const) : ("idkit" as const);
       if (!v.ok) decision = { status: "proof_invalid", method, reason: `World ID proof rejected: ${v.error}`, worldIdVerified: false };
       else {
-        const commitment = commitmentOf(v.nullifier!);
-        const roleCheck = await d.roles.isValidApprover(commitment, req.requiredRole, body.approverName);
-        decision =
-          roleCheck === "valid"
-            ? { status: "approved", method, approverCommitment: commitment, approverName: body.approverName, roleCheck, worldIdVerified: true }
-            : { status: "role_invalid", method, reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, approverCommitment: commitment, approverName: body.approverName, roleCheck, worldIdVerified: true };
+        const g = await grant(req, { approverName: body.approverName, commitment: commitmentOf(v.nullifier!), method });
+        return c.json(g, g.status === "approved" || g.status === "partial" ? 200 : 403);
       }
     }
     d.approvals.resolve(req.id, decision);
-    return c.json(decision, decision.status === "approved" ? 200 : 403);
+    return c.json(decision, 403);
   });
 
   // The requester changes their mind before anyone approved: nothing is sent.
@@ -201,7 +234,22 @@ export function buildApp(d: AppDeps) {
     const root = d.audit.merkleRoot();
     return c.json({ records: d.audit.list(), chain: d.audit.verify(), merkleRoot: root, ensLink: d.ensLink?.(root) });
   });
-  app.get("/ens", async (c) => (d.ens ? c.json(await d.ens.status(d.audit.merkleRoot())) : c.json({ error: "ENS not configured (static JSON mode)" }, 404)));
+  // Stale-while-revalidate: the panel opens instantly from cache; a background refresh keeps it current.
+  let ensCache: { at: number; body: unknown } | undefined, ensRefresh: Promise<unknown> | undefined;
+  const refreshEns = () =>
+    (ensRefresh ??= d.ens!.status(d.audit.merkleRoot())
+      .then((body) => (ensCache = { at: Date.now(), body }))
+      .finally(() => (ensRefresh = undefined)));
+  if (d.ens) void refreshEns().catch(() => {});
+  app.get("/ens", async (c) => {
+    if (!d.ens) return c.json({ error: "ENS not configured (static JSON mode)" }, 404);
+    if (c.req.query("fresh") !== undefined || !ensCache) await refreshEns();
+    else if (Date.now() - ensCache.at > 15_000) void refreshEns().catch(() => {});
+    // The local audit root changes without any chain read; always report the current one.
+    const body = ensCache!.body as { audit: { onChain?: string; local: string; anchored: boolean } };
+    const local = d.audit.merkleRoot();
+    return c.json({ ...body, audit: { ...body.audit, local, anchored: !!body.audit.onChain && body.audit.onChain.toLowerCase() === local.toLowerCase() } });
+  });
   app.get("/ens/approver", async (c) => (d.ens ? c.json(await d.ens.approver(c.req.query("name") ?? "", c.req.query("role"))) : c.json({ error: "ENS not configured" }, 404)));
 
   app.post("/audit/anchor", async (c) => {
@@ -239,7 +287,7 @@ export function buildApp(d: AppDeps) {
   const page = (title: string, body: string, next?: string) =>
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
     `<body style="font:15px/1.6 system-ui;max-width:560px;margin:12vh auto;padding:0 16px;color:#141414"><p style="font:500 11px ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:#6f6f6f">Airlock · World ID for Agents</p><h2 style="margin:.2em 0">${title}</h2><p>${body}</p>${next ? `<p><a href="${next}">Back to the console →</a></p>` : ""}` +
-    `<script>if (window.opener) { try { window.opener.postMessage({ airlock: "worldid-done" }, location.origin); } catch (e) {} setTimeout(() => window.close(), 600); }${next ? ` else setTimeout(() => (location.href = ${JSON.stringify(next)}), 2500);` : ""}</script></body>`;
+    `<script>if (window.opener) { try { window.opener.postMessage({ airlock: "worldid-done", title: ${JSON.stringify(title)}, text: ${JSON.stringify(body.replace(/<[^>]+>/g, ""))} }, "*"); } catch (e) {} setTimeout(() => window.close(), 600); }${next ? ` else setTimeout(() => (location.href = ${JSON.stringify(next)}), 2500);` : ""}</script></body>`;
   const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
 
   app.get("/approvals/:id/oidc", async (c) => {
@@ -280,22 +328,14 @@ export function buildApp(d: AppDeps) {
     }
     const req = d.approvals.get(r.pending.ref);
     if (!req || req.status !== "pending") return c.html(page("Too late", "This request is no longer waiting for approval."), 409);
-    const binding = d.oidcBinding === "name" && d.roles.isLiveApprover ? ("name" as const) : ("commitment" as const);
-    const roleCheck =
-      binding === "name"
-        ? await d.roles.isLiveApprover!(req.requiredRole, r.pending.approverName)
-        : await d.roles.isValidApprover(commitment, req.requiredRole, r.pending.approverName);
-    const who = { method: "oidc" as const, identityBinding: binding, approverCommitment: commitment, approverName: r.pending.approverName, roleCheck, worldIdVerified: true };
-    d.approvals.resolve(
-      req.id,
-      roleCheck === "valid"
-        ? { status: "approved", ...who }
-        : { status: "role_invalid", reason: `verified human, but ENS role check failed: ${roleCheck} for ${req.requiredRole}`, ...who },
-    );
+    const g = await grant(req, { approverName: r.pending.approverName, commitment, method: "oidc" });
+    const who = `<b>${esc(r.pending.approverName)}</b>`;
     return c.html(
-      roleCheck === "valid"
-        ? page("Approved", `Verified human · <b>${esc(r.pending.approverName)}</b> holds a live ${esc(req.requiredRole)} role. The outer door opens.`, `/console#${req.id}`)
-        : page("Role check failed", `Verified human, but <b>${esc(r.pending.approverName)}</b> is ${esc(roleCheck)} for ${esc(req.requiredRole)}. Nothing was sent.`, `/console#${req.id}`),
+      g.status === "approved"
+        ? page("Approved", `Verified human · ${who} holds a live ${esc(req.requiredRole)} role.${g.need > 1 ? ` ${g.need} different humans approved.` : ""} The outer door opens.`, `/console#${req.id}`)
+        : g.status === "partial"
+          ? page(`Counted: ${g.have} of ${g.need}`, `Verified human · ${who} approved. A second, <b>different</b> human must approve before anything leaves.`, `/console#${req.id}`)
+          : page(g.status === "role_invalid" ? "Role check failed" : "Not counted", esc("reason" in g ? g.reason : ""), `/console#${req.id}`),
     );
   });
 

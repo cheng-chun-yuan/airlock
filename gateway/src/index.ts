@@ -37,6 +37,7 @@ const redactor = new PipelineRedactor(recognizers, (r, e) => console.warn(`[reda
 
 // Policy + roles: ENS (Sepolia) when SEPOLIA_RPC_URL is set, else local JSON
 let policies: PolicyResolver, roles: RoleRegistry, writer: EnsWriter | undefined, ensMode: string, ens: EnsInspector | undefined;
+const defaultAgentName = env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth";
 if (env.SEPOLIA_RPC_URL) {
   const client = ensClient(env.SEPOLIA_RPC_URL, env.ENS_UNIVERSAL_RESOLVER as Hex | undefined);
   if (env.ENS_PRIVATE_KEY && env.ENS_RESOLVER) writer = new EnsWriter(env.SEPOLIA_RPC_URL, env.ENS_PRIVATE_KEY as Hex, env.ENS_RESOLVER as Hex, client, env.ENS_APPROVER_REGISTRY as Hex | undefined);
@@ -53,6 +54,8 @@ if (env.SEPOLIA_RPC_URL) {
     auditName: env.ENS_AUDIT_NAME ?? "audit.acme.eth",
     accounts,
     approverRegistry: env.ENS_APPROVER_REGISTRY as Hex | undefined,
+    agents: (env.ENS_AGENTS ?? `${defaultAgentName},${defaultAgentName.replace(/^[^.]+/, "nda-agent")},${defaultAgentName.replace(/^[^.]+/, "intern-bot")}`).split(","),
+    sharedPolicy: env.ENS_SHARED_POLICY ?? `legal.policies.${defaultAgentName.split(".").slice(-2).join(".")}`,
   });
 } else {
   policies = new StaticPolicyResolver(path(env.POLICY_FILE ?? "demo/policies.json"));
@@ -91,9 +94,13 @@ const oidc =
       })
     : undefined;
 
+const bindingMode: "commitment" | "name" =
+  ((env.WORLD_BINDING ?? env.WORLD_OIDC_BINDING) as "commitment" | "name" | undefined) ??
+  (verifier.mode === "worldid" && env.WORLD_ENV !== "production" ? "name" : oidc && /sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment");
+
 const auditName = env.ENS_AUDIT_NAME ?? "audit.acme.eth";
 const audit = new JsonlAuditLog(path(env.AUDIT_FILE ?? "data/audit.jsonl"), env.GATEWAY_SECRET ?? "dev-secret-change-me", writer && ((root) => writer!.setText(auditName, "airlock.auditRoot", root)));
-const approvalTimeoutMs = Number(env.APPROVAL_TIMEOUT_MS ?? 180_000);
+const approvalTimeoutMs = Number(env.APPROVAL_TIMEOUT_MS ?? 300_000);
 const approvals = new ApprovalStore(approvalTimeoutMs);
 
 const pipeline = new Pipeline({
@@ -120,8 +127,9 @@ const app = buildApp({
   verifier,
   oidc,
   ens,
-  // The event sandbox mints a fresh `sub` per sign-in, so identity↔role binding can only be enforced on production.
-  oidcBinding: (env.WORLD_OIDC_BINDING as "commitment" | "name" | undefined) ?? (oidc && /sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment"),
+  // Test environments (World staging / the event sandbox) use test identities, so approvers are bound to their live
+  // ENS name; production binds the World identity to the commitment enrolled on ENS. Override: WORLD_BINDING.
+  binding: bindingMode,
   localModel: local.model,
   claudeModels: (env.EGRESS_MODELS ?? env.CLAUDE_MODELS ?? `${defaultClaudeModel},claude-opus-5-5`).split(","),
   consoleHtml: readFileSync(path("console/index.html"), "utf8"),
@@ -132,7 +140,7 @@ const app = buildApp({
     worldIdMode: verifier.mode,
     defaultAgent: env.DEFAULT_AGENT ?? "contract-agent.agents.acme.eth",
     worldIdAgents: !!oidc,
-    oidcBinding: oidc ? (env.WORLD_OIDC_BINDING ?? (/sandbox/.test(env.WORLD_OIDC_ISSUER ?? "https://sandbox.auth.world.org") ? "name" : "commitment")) : undefined,
+    binding: bindingMode,
     ensMode,
     defaultClaudeModel,
     egress: egress.configured ? egress.name : null,
