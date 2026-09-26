@@ -34,10 +34,20 @@ agent ──OpenAI API──▶  Router → Redactor → Risk (local attack test
 
 ## 🧑‍⚖️ For judges: the 3-minute tour
 
-Open the live demo and click through the four tabs:
+Open the live demo. It lands on **Demo**: a 6-scene stepper, with the **agent** on the left and the **airlock** on the right. Press **Run scene ▸**, then **Next →**:
 
-| Tab | What to look for |
-|---|---|
+| # | Scene | What happens |
+|---|---|---|
+| 01 | Public | Nothing sensitive → sent automatically, still audited. |
+| 02 | Confidential | Redacted (hover a chip to see the real value, which stays local) → **held** → *World ID for Agents* → **hold** to approve → the answer streams back with real names. |
+| 03 | Seal | Same request, sealed → the frontier model never sees it; the local model answers. |
+| 04 | Revoked | **Revoke carol on ENS** (Sepolia tx) → carol is a verified human but her role is gone → **role check failed**, nothing sent. |
+| 05 | Re-identified | The name is redacted, but the context gives it away → the local attack test catches it → **high risk**, data-owner role required. |
+| 06 | Proof | **ENS** tab (live policy, who may write which record key, audit anchor) · **Walk the chain** · **Anchor to ENS**. |
+
+Other tabs: **Queue** (every held request with the full airlock chamber), **Ledger** (hash chain), **ENS** (live ENSv2 state, plus approver enroll and lookup).
+
+---|---|
 | **Try it** | *Public question* is sent straight out. *Confidential contract* is held at the door. *Re-identifiable* is caught by the local attack test. *Restricted data* never leaves. The answers stream in with real names restored. |
 | **Queue** | The request sits in the **airlock chamber**: Local → Redact → Policy → Human → Egress. Hover a `ORG·1` chip to see the real value, which stays local. Pick **World ID for Agents**, type `alice.legal.approvers.airlock.eth`, and **hold** the button (a tap does nothing). |
 | **Ledger** | Every decision is a hash-chained block. **Walk the chain** re-verifies it. **Anchor root to ENS** writes the Merkle root to `audit.airlock.eth`. |
