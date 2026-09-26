@@ -8,6 +8,38 @@
 - **ENS name:** [`airlock.eth`](https://app.ens.dev/airlock.eth) on ENSv2 Sepolia.
 - **Built at:** ETHGlobal Tokyo 2026.
 
+## Why Airlock
+
+### The pain point
+Teams want AI agents to work on real documents: contracts, pricing, client emails. The best models are frontier models run by someone else. Every agent call sends the full text out, and nothing in between asks whether it should:
+- **Agents decide alone.** A prompt or a tool call is enough to send a client's name, a deal size or a contract to a third-party API. Once the bytes leave, it can't be undone.
+- **Redaction alone isn't enough.** Replace "TSMC" with `ORG_1`, and "the Hsinchu foundry that makes Apple's chips" still gives it away.
+- **"Someone approved it" means little.** One person with two accounts looks like two approvers. An approver who left the team can keep approving. Approval tables live in the same database the vendor controls.
+- **Policy sits in config files and dashboards.** Nobody outside can check what rule applied, who could change it, or whether the log was edited afterwards.
+
+### What we built
+An OpenAI-compatible gateway that sits between agents and models. Anyone can run one for their team in a minute:
+- **Local first.** Your local model de-identifies each request, then plays attacker and tries to re-identify it. It answers by itself when nothing may leave.
+- **Human consent at the door.** A confidential request waits until a **verified human** holding a **live approver role** approves **that exact payload**. High-risk requests need **two different humans**.
+- **Policy, roles and audit on ENS.** Each gateway gets `<name>.airlock.eth`, owned by the creator's wallet. Its policy, approvers and audit anchor live under that name, and every request reads the policy live.
+- **Self-serve.** Sign in with a wallet, bring your own local and frontier models, invite people with roles (member / approver / admin), give each person their own API key, and assign each person an **agent** whose ENS policy governs everything they send.
+- **Accountable.** Every decision goes into a hash-chained log whose Merkle root is anchored on ENS. The platform itself can't rewrite your policy after setup.
+
+### Why World ID
+Every approval has to be made by a real person, and for high-risk requests two different people, without Airlock learning who they are.
+- **Proof of personhood, not identity.** We need "a real human approved this", not a passport. We store only a salted commitment, never the identifier.
+- **The two-person rule needs distinct humans.** Accounts can't show that two approvers are two people; World ID's nullifier can. Airlock refuses the same human under a second approver name.
+- **Bound to the payload.** The proof (IDKit signal, or the OIDC nonce for World ID for Agents) commits to the hash of the exact text that will leave, so an approval can't be replayed on another request.
+- **Built for agents.** World ID for Agents puts a human check exactly where an agent action can't be undone.
+
+### Why ENS
+We needed policy and roles that the team owns, that anyone can check, and that can be revoked. ENSv2 covers all three:
+- **The policy *is* the ENS record.** `policy.<name>.airlock.eth` holds the records (`maxClass`, `egress`, `models`, `highRiskQuorum`), and the gateway reads them on every request. Change a record and the next request obeys it.
+- **Roles are names, revocation is unregistering.** An approver is `alice.approvers.<name>.airlock.eth`. Remove the subname and she can't approve, even with a valid World ID.
+- **Ownership is real.** The creator's wallet holds the resolver and registries. After setup the platform hands them over: it can't change the policy, and every change is a transaction the owner signs.
+- **ENSv2 features doing real work.** Wildcard resolution gives every agent a default policy for free. `linkToNode` aliasing points many agents at one named policy (edit once, all follow). Enhanced Access Control decides who may write which record.
+- **A public anchor.** The audit log's Merkle root lives at `audit.<name>.airlock.eth`, so anyone can check the log wasn't rewritten.
+
 Agents (LibreChat, Hermes, Claude Code, anything that speaks the OpenAI API) point at Airlock instead of a model provider. Every request goes through the same airlock:
 
 ```
