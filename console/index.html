@@ -276,6 +276,17 @@
   .act .kind { font:600 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); }
   .act.approver .kind { color:var(--ember); } .act.policy .kind, .act.alias .kind { color:var(--hold); } .act.access .kind { color:var(--ink); }
   .act.new { animation:slide-in .45s cubic-bezier(.2,.8,.2,1); background:var(--hold-tint); }
+  .brand .org { font:500 11px var(--mono); letter-spacing:.06em; color:var(--umber); margin-left:10px; text-transform:none; }
+  .profile { border:1px solid var(--hairline); background:var(--canvas); border-radius:99px; padding:4px 12px; font:500 12px var(--body); cursor:pointer; color:var(--ink); white-space:nowrap; }
+  .profile.empty { border-color:var(--hold); color:var(--hold); }
+  dialog { border:1px solid var(--hairline); border-radius:16px; padding:22px; width:min(460px, 92vw); background:var(--canvas); color:var(--ink); }
+  dialog::backdrop { background:rgba(0,0,0,.35); }
+  label.f { display:flex; flex-direction:column; gap:4px; margin-top:10px; } label.f span { font:500 11px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); } label.f small { font-size:12px; }
+  .composer-meta.one { grid-template-columns:1fr; }
+  .srow { display:grid; grid-template-columns:18px 140px 1fr; gap:8px; padding:7px 0; border-bottom:1px solid var(--faint); font-size:13.5px; align-items:baseline; }
+  .srow .dot { width:9px; height:9px; border-radius:99px; background:var(--go); margin-top:4px; } .srow.bad .dot { background:var(--ember); }
+  .prow { display:grid; grid-template-columns:1fr auto; gap:10px; padding:9px 0; border-bottom:1px solid var(--faint); font-size:13.5px; align-items:center; }
+  pre.code { font:12.5px/1.6 var(--mono); background:var(--haze); border-radius:10px; padding:12px; margin:6px 0 0; white-space:pre-wrap; word-break:break-all; }
   .linkish { border:0; background:none; padding:0; font:500 12.5px var(--body); color:var(--umber); cursor:pointer; text-align:left; justify-self:start; } .linkish:hover { color:var(--ink); text-decoration:underline; }
   .composer-meta label { display:flex; flex-direction:column; gap:3px; } .composer-meta label span { font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--umber); }
   .via { display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
@@ -298,35 +309,59 @@
 </head>
 <body>
 <header>
-  <div class="brand"><span class="mark"></span>AIRLOCK</div>
+  <div class="brand"><span class="mark"></span>AIRLOCK<span class="org" id="orgName"></span></div>
   <nav class="tabs">
-    <button data-tab="demo" class="on">Demo</button>
-    <button data-tab="queue">Queue <span class="count" id="nPending"></span></button>
-    <button data-tab="ledger">Ledger</button>
-    <button data-tab="ens">ENS</button>
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="queue">Approvals <span class="count" id="nPending"></span></button>
+    <button data-tab="playground">Playground</button>
+    <button data-tab="ens">Agents</button>
+    <button data-tab="approvers">Approvers</button>
+    <button data-tab="ledger">Audit</button>
+    <button data-tab="connect">Connect</button>
   </nav>
   <div class="ticker" id="ticker" title="Recent decisions: green = sent, red = sealed, striped = blocked"></div>
   <div class="live" id="live"><span class="led"></span><span id="liveTxt">offline</span></div>
   <button class="bell" id="bell" title="Browser notification when a request needs approval">🔔 Notify me</button>
-  <span class="modepill" id="mode"></span>
+  <button class="profile" id="profileBtn" title="Your identity in Airlock">Set up profile</button>
 </header>
 
+<dialog id="profileDlg">
+  <form method="dialog">
+    <p class="eyebrow">Your profile</p>
+    <h3 style="margin:.2em 0 12px">Who you are in Airlock</h3>
+    <label class="f"><span>Name or work email</span><input class="field" id="pfUser" placeholder="you@company.com" required /><small class="muted">Sent with your requests (x-airlock-user) and written to the audit log.</small></label>
+    <label class="f"><span>Your approver name (ENS)</span><input class="field" id="pfApprover" placeholder="you.legal.approvers.airlock.eth" /><small class="muted">Only if you approve requests. Enroll it under <b>Approvers</b> with World ID first.</small></label>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn dark" id="pfSave" value="save">Save</button></div>
+  </form>
+</dialog>
+
 <main>
-  <section id="tab-demo">
-    <ol class="scenes" id="scenes"></ol>
+  <section id="tab-overview">
+    <div class="ledger-head">
+      <div><p class="eyebrow">Overview</p><h2 id="ovTitle">—</h2><p class="muted" id="ovSub" style="margin:4px 0 0"></p></div>
+      <div style="display:flex; gap:8px"><button class="btn" id="ovRefresh">Refresh</button></div>
+    </div>
+    <div class="stats" id="ovStats"></div>
+    <div class="ens-grid" style="margin-top:16px">
+      <div class="panel"><h3>Waiting for approval</h3><div id="ovPending"></div></div>
+      <div class="panel"><h3>System status</h3><div id="ovStatus"></div></div>
+      <div class="panel" style="grid-column:1 / -1"><h3>Recent decisions</h3><div id="ovRecent"></div></div>
+    </div>
+  </section>
+
+  <section id="tab-playground" hidden>
     <div class="scene">
-      <div><p class="eyebrow" id="sceneNo"></p><h2 id="sceneTitle"></h2><p class="muted" id="sceneNote"></p></div>
-      <div class="scene-actions" id="sceneActions"></div>
+      <div><p class="eyebrow">Playground</p><h2>Send a request through Airlock</h2><p class="muted">Requests go out as <b id="pgWho">you</b>, under the selected agent's ENS policy. Confidential data waits for an approver.</p></div>
+      <div class="scene-actions"><select class="field" id="pgExample" style="width:auto"><option value="">Examples…</option></select><button class="btn" id="pgNew">New conversation</button></div>
     </div>
     <div class="demo-grid">
       <div class="pane-card">
         <div class="pane-head"><p class="eyebrow">Agent · <select class="agent-select" id="demoAgent" title="x-airlock-agent: which ENS policy this agent runs under"></select></p><div class="trace" id="demoTrace"></div></div>
-        <div class="convo" id="demoConvo"><div class="muted">Pick a scene and press <b>Run</b>.</div></div>
-        <div class="composer-meta">
-          <label><span>Requester</span><input class="field" id="demoUser" title="Sent as x-airlock-user; shown to the approver and in the audit log" /></label>
+        <div class="convo" id="demoConvo"><div class="muted">Ask something, or pick one of the examples.</div></div>
+        <div class="composer-meta one">
           <label><span>Reason (shown to the approver)</span><input class="field" id="demoWhy" placeholder="Why does this need a frontier model?" /></label>
         </div>
-        <div class="composer"><textarea class="field" id="demoInput" rows="2" placeholder="…or ask the agent anything"></textarea><button class="btn dark" id="demoSend">Send</button></div>
+        <div class="composer"><textarea class="field" id="demoInput" rows="2" placeholder="Message the agent (⌘/Ctrl + Enter to send)"></textarea><button class="btn dark" id="demoSend">Send</button></div>
       </div>
       <div class="pane-card" id="demoAirlock"></div>
     </div>
@@ -334,48 +369,58 @@
 
   <section id="tab-queue" class="queue" hidden>
     <aside>
-      <p class="eyebrow">At the door</p>
+      <p class="eyebrow">Approval requests</p>
       <div class="list" id="list"></div>
-      
     </aside>
     <div class="detail" id="detail"></div>
   </section>
 
   <section id="tab-ledger" hidden>
     <div class="ledger-head">
-      <div><p class="eyebrow">Hash-chained ledger</p><h2 id="chainTitle">—</h2><div class="root" id="root"></div><div class="stats" id="stats"></div></div>
+      <div><p class="eyebrow">Audit · hash-chained ledger</p><h2 id="chainTitle">—</h2><div class="root" id="root"></div><div class="stats" id="stats"></div></div>
       <div style="display:flex; gap:8px"><button class="btn" id="exportCsv" title="Download the audit trail">Export CSV</button><button class="btn" id="exportJson">Export JSON</button><button class="btn" id="verify" title="Re-hash every record and check each link">Verify chain</button><button class="btn dark" id="anchor" title="Write the Merkle root to the audit ENS name (Sepolia tx)">Anchor to ENS</button></div>
     </div>
     <div class="chain" id="chain"></div>
     <div class="blkinfo" id="blkinfo"></div>
+    <div class="panel" id="ensActivityPanel" style="margin-top:16px" hidden><h3>On-chain policy changes <span class="muted" style="font:400 13px var(--body)">· indexed and pushed by Curvegrid MultiBaas</span></h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Every policy edit, link, access change, approver registration and revocation on Airlock's ENS contracts. Pushed to the gateway by webhook, so changes take effect immediately.</p><div id="ensActivity" class="activity"></div></div>
   </section>
 
   <section id="tab-ens" hidden>
     <div class="ledger-head">
-      <div><p class="eyebrow">ENSv2 · Sepolia · read live</p><h2 id="ensTitle">—</h2><div class="root" id="ensSub"></div></div>
+      <div><p class="eyebrow">Agents & policy · ENSv2 · read live</p><h2 id="ensTitle">—</h2><div class="root" id="ensSub"></div></div>
       <div style="display:flex; gap:8px"><button class="btn" id="ensRefresh">Refresh</button></div>
     </div>
     <div class="ens-grid">
-      <div class="panel"><h3>Agent policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the agent's egress policy. Change one on-chain and the next request obeys it.</p><div id="ensPolicy"></div></div>
-      <div class="panel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">ENSv2 record aliasing: registered agents <b>link</b> to one shared policy record (edit once → all change). An agent that was never registered falls through <b>wildcard resolution</b> to the resolver's default record, which is the org default.</p><div id="ensAgents"></div></div>
-      <div class="panel" id="ensActivityPanel" style="grid-column:1 / -1" hidden><h3>On-chain activity <span class="muted" style="font:400 13px var(--body)">· indexed and pushed by Curvegrid MultiBaas</span></h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Every policy edit, link, access change, approver registration and revocation on Airlock's ENS contracts. Pushed to the gateway by webhook, so a revocation or policy change takes effect immediately.</p><div id="ensActivity" class="activity"></div></div>
+      <div class="panel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.</p><div id="ensAgents"></div></div>
+      <div class="panel"><h3>Policy</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">These records <i>are</i> the agent's egress policy. Change one on-chain and the next request obeys it.</p><div id="ensPolicy"></div></div>
+      <div class="panel"><h3>Who may change what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (read from the live contract).</p><div id="ensAccess"></div></div>
       <div class="panel"><h3>Audit anchor</h3><div id="ensAudit"></div></div>
-      <div class="panel"><h3>Who may write what</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Enhanced Access Control on the PermissionedResolver, per record key (eth_call on the live contract).</p><div id="ensAccess"></div></div>
-      <div class="panel"><h3>Approvers</h3>
-        <p class="muted" style="margin:-4px 0 10px; font-size:13px">Give someone the approver role: they verify with World ID once and get an ENS subname under the role. Remove it with <b>Revoke</b> in the lookup below.</p>
-        <div style="display:flex; gap:8px"><input class="field" id="enrollName" placeholder="carol.legal.approvers.airlock.eth" style="flex:1" /><button class="btn dark" id="enrollGo">Enroll with World ID</button></div>
+      <div class="panel"><h3>Name tree</h3><pre class="tree" id="ensTree"></pre></div>
+    </div>
+  </section>
+
+  <section id="tab-approvers" hidden>
+    <div class="ledger-head">
+      <div><p class="eyebrow">Approvers</p><h2>Who can release confidential data</h2><div class="root" id="apRole"></div></div>
+      <div style="display:flex; gap:8px"><button class="btn" id="apRefresh">Refresh</button></div>
+    </div>
+    <div class="ens-grid">
+      <div class="panel"><h3>Directory</h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Approvers seen in approvals, the audit log and on-chain registrations, with their live ENS status.</p><div id="apList"></div></div>
+      <div class="panel"><h3>Enroll an approver</h3>
+        <p class="muted" style="margin:-4px 0 10px; font-size:13px">The approver verifies with World ID once. Airlock creates their ENS subname under the role and stores only a commitment, never their identity.</p>
+        <div style="display:flex; gap:8px"><input class="field" id="enrollName" placeholder="name.legal.approvers.airlock.eth" style="flex:1" /><button class="btn dark" id="enrollGo">Enroll with World ID</button></div>
         <div id="enrollVia"></div><div id="enrollQr" style="margin-top:10px; display:flex; gap:14px; align-items:center"></div><pre class="out" id="enrollOut"></pre>
-        <h3 style="margin-top:18px">Approver lookup</h3>
-        <div style="display:flex; gap:8px"><input class="field" id="ensName" placeholder="alice.legal.approvers.airlock.eth" style="flex:1" /><button class="btn dark" id="ensCheck">Check</button></div>
+        <h3 style="margin-top:18px">Look up / revoke</h3>
+        <div style="display:flex; gap:8px"><input class="field" id="ensName" placeholder="name.legal.approvers.airlock.eth" style="flex:1" /><button class="btn dark" id="ensCheck">Check</button></div>
         <div class="out" id="ensApprover" style="margin-top:10px"></div>
-        <h3 style="margin-top:18px">Name tree</h3><pre class="tree" id="ensTree"></pre>
       </div>
     </div>
   </section>
 
-
-
-
+  <section id="tab-connect" hidden>
+    <div class="ledger-head"><div><p class="eyebrow">Connect</p><h2>Point your agents at Airlock</h2><p class="muted" style="margin:4px 0 0">Airlock speaks the OpenAI API. Change the base URL, keep your client.</p></div></div>
+    <div class="ens-grid" id="connectBody"></div>
+  </section>
 </main>
 <div class="toasts" id="toasts"></div>
 
@@ -394,19 +439,34 @@ const hhmmss = (t) => new Date(t).toLocaleTimeString([], { hour:"2-digit", minut
 const labels = (text) => esc(text).replace(/^\[user\] /gm, "").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, "$1·$2");
 
 let cfg = {}, items = [], selected = null, current = null, lastStatus = {}, seen = new Set(), view = "split", who = null, via = null;
+/** The signed-in person, kept in this browser. Sent as x-airlock-user; the approver name pre-fills approvals. */
+const profile = (() => { try { return JSON.parse(localStorage.getItem("airlock.profile") || "{}"); } catch { return {}; } })();
+function saveProfile() { try { localStorage.setItem("airlock.profile", JSON.stringify(profile)); } catch {} paintProfile(); }
+function paintProfile() {
+  const b = $("#profileBtn"); b.classList.toggle("empty", !profile.user);
+  b.textContent = profile.user ? profile.user : "Set up profile";
+  $("#pgWho").textContent = profile.user || "an anonymous user (set up your profile)";
+}
+function openProfile() { $("#pfUser").value = profile.user ?? ""; $("#pfApprover").value = profile.approver ?? ""; $("#profileDlg").showModal(); }
+const approverFor = (role) => profile.approver && profile.approver.endsWith("." + role) ? profile.approver : "";
 const viaToggle = () => cfg.worldIdAgents && cfg.worldIdMode !== "mock"
   ? `<div class="via"><span class="eyebrow" style="margin:0">Verify with</span><div class="seg">${[["oidc", "World ID for Agents"], ["idkit", "World App QR (IDKit)"]].map(([k, l]) => `<button data-via="${k}" class="${via === k ? "on" : ""}">${l}</button>`).join("")}</div></div>` : "";
 const wireVia = (root) => $$("[data-via]", root).forEach((b) => (b.onclick = () => { via = b.dataset.via; $$("[data-via]", root).forEach((x) => x.classList.toggle("on", x === b)); }));
 
 /* ---------- tabs ---------- */
+const TABS = ["overview", "queue", "playground", "ens", "approvers", "ledger", "connect"];
 function tab(name) {
+  if (!TABS.includes(name)) name = "overview";
   if (name !== "queue") history.replaceState(null, "", "#" + name); else if (selected) history.replaceState(null, "", "#" + selected);
-  if (name === "demo") renderScene();
   $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
-  ["demo", "queue", "ledger", "ens"].forEach((t) => ($("#tab-" + t).hidden = t !== name));
+  TABS.forEach((t) => ($("#tab-" + t).hidden = t !== name));
+  if (name === "overview") loadOverview();
+  if (name === "playground" && !demo.inflight && !demo.id) renderAirlock(null);
   if (name === "ledger") loadLedger();
   if (name === "queue") { const cur = items.find((x) => x.id === selected); const waiting = items.find((x) => x.status === "pending"); if (waiting && (!cur || cur.status !== "pending")) show(waiting.id); }
   if (name === "ens") loadEns();
+  if (name === "approvers") loadApprovers();
+  if (name === "connect") renderConnect();
 }
 $$(".tabs button").forEach((b) => (b.onclick = () => tab(b.dataset.tab)));
 
@@ -415,9 +475,9 @@ async function loadQueue() {
   items = await j("/approvals");
   const pending = items.filter((r) => r.status === "pending").length;
   $("#nPending").textContent = pending || "";
-  document.title = pending ? `(${pending}) Airlock` : "Airlock Console";
+  document.title = pending ? `(${pending}) Airlock` : "Airlock";
   if (!items.length) {
-    $("#list").innerHTML = `<div class="empty"><b>The chamber is empty.</b><br/>Confidential requests wait here for a human. Try the contract preset under <a href="#" onclick="tab('try');return false">Try it</a>.</div>`;
+    $("#list").innerHTML = `<div class="empty"><b>The chamber is empty.</b><br/>Confidential requests wait here for a human. Nothing is waiting for a reviewer. Send a confidential request from the <a href="#" onclick="tab('playground');return false">Playground</a> or any connected agent.</div>`;
   } else {
     $("#list").innerHTML = items.map((r) => {
       const masked = Object.values(r.entities).reduce((a, b) => a + b, 0);
@@ -520,7 +580,7 @@ function decideHTML(r) {
   if (cfg.worldIdMode === "mock" && !who) who = people[0];
   const whoHTML = cfg.worldIdMode === "mock"
     ? `<label class="eyebrow" style="margin:0">Approving as <span class="muted">(mock World ID)</span></label><div class="opts">${people.map((p, i) => `<button data-i="${i}" class="${who && who.name === p.name ? "on" : ""}">${esc(p.name.split(".")[0])}<span class="muted">.${esc(p.name.split(".").slice(1).join("."))}</span></button>`).join("")}</div>`
-    : `<label class="eyebrow" style="margin:0">Approver (ENS name)</label><input id="approverName" placeholder="alice.${esc(r.requiredRole)}" />${viaToggle()}`;
+    : `<label class="eyebrow" style="margin:0">Approver (ENS name)</label><input id="approverName" value="${esc(approverFor(r.requiredRole))}" placeholder="you.${esc(r.requiredRole)}" />${viaToggle()}`;
   return `${quorumHTML(r)}<div class="decide"><div class="who">${whoHTML}<button class="linkish" id="sealNoteToggle" style="margin-top:8px">+ Add a note for the requester</button><input class="field" id="sealNote" placeholder="Note to the requester (sent with Seal)" style="margin-top:8px; max-width:420px" hidden /></div>
     <div class="actions"><button class="seal" id="seal" title="Deny: nothing is sent; the local model answers instead">Seal (deny)</button><button class="hold" id="hold" title="Press and hold ~1s, then verify with World ID"><i class="fill"></i><span>Hold, then verify with World ID</span></button></div></div>
     <div id="qr"></div><div class="out" id="out"></div>`;
@@ -647,6 +707,7 @@ async function loadLedger() {
   $$(".blk").forEach((b) => (b.onclick = () => pick(+b.dataset.seq)));
   $("#chain").scrollLeft = $("#chain").scrollWidth;
   if (n) pick(pickedSeq ?? ledger.records[n - 1].seq);
+  loadActivity();
 }
 function pick(seq) {
   pickedSeq = seq;
@@ -738,16 +799,15 @@ async function loadEns() {
     `│   └─ ${ensApp("legal.policies." + root)}   ← shared policy record`,
     `├─ ${ensApp("approvers." + root)}`,
     `│   └─ ${ensApp(role)}   ← approver role`,
-    `│       └─ ${ensApp("alice." + role)}   ← approver`,
+    `│       └─ <name>.${esc(role)}   ← one subname per enrolled approver`,
     `└─ ${ensApp(a.name)}   ← audit anchor`,
   ].join("\n");
-  if (!$("#ensName").value) $("#ensName").value = "alice." + role;
-  loadActivity();
 }
 $("#ensRefresh").onclick = loadEns;
 async function checkApprover() {
   const name = $("#ensName").value.trim();
-  const r = await j(`/ens/approver?name=${encodeURIComponent(name)}&role=${encodeURIComponent(ensState?.approverRole ?? "")}`);
+  if (!name) return;
+  const r = await j(`/ens/approver?name=${encodeURIComponent(name)}&role=${encodeURIComponent(ensState?.approverRole ?? approverRole())}`);
   if (r.error) { $("#ensApprover").textContent = r.error; return; }
   const live = r.status === "live";
   $("#ensApprover").innerHTML = `<span class="tag ${live ? "approved" : "denied"}">${live ? "approver · live" : esc(r.status)}</span>` +
@@ -756,26 +816,28 @@ async function checkApprover() {
   $("#ensRevoke") && ($("#ensRevoke").onclick = async () => {
     $("#ensRevoke").textContent = "Revoking… (Sepolia tx)"; $("#ensRevoke").disabled = true;
     const d = await post("/admin/revoke", { approverName:name });
-    toast(d.error ? "REVOKE FAILED" : "REVOKED ON ENS", d.error ?? `${name} unregistered`); checkApprover();
+    toast(d.error ? "REVOKE FAILED" : "REVOKED ON ENS", d.error ?? `${name} unregistered`); checkApprover(); loadApprovers();
   });
   $("#ensEnrollThis") && ($("#ensEnrollThis").onclick = () => { $("#enrollName").value = name; $("#enrollGo").click(); });
 }
 $("#ensCheck").onclick = checkApprover;
 
-/* ---------- demo ---------- */
-// Distinctive fictional names on purpose: famous placeholders (Acme, Globex…) get re-identified by the local attack test.
-const CONTRACT = "CONFIDENTIAL. Review this clause for Kestrelwood Analytics: \"Morrow Vale Logistics will pay $2,400,000 per year; Kestrelwood's liability is capped at $50,000.\" Client contact: Daniel Okafor (d.okafor@morrowvale.example). In two sentences: what's the biggest risk for Kestrelwood Analytics?";
-const role = () => `legal.approvers.${(cfg.defaultAgent ?? "x.agents.airlock.eth").split(".").slice(-2).join(".")}`;
-const SCENES = () => [
-  { t:"Public", title:"Public data goes straight out", note:"No sensitive entities → sent to the frontier model immediately. Still audited.", prompt:"In one sentence: why does an airlock have two doors?" },
-  { t:"Confidential", why:"Second opinion on the liability cap before tomorrow's negotiation.", title:"Confidential data waits for a human", note:"De-identified first: names, money and email become labels (ORG·1, PERSON·1…). You can read the names; the model only gets the labels. Hold to approve with World ID for Agents; the answer streams back with the real names restored.", prompt:CONTRACT, approver:"alice" },
-  { t:"Seal", why:"Second opinion on the liability cap before tomorrow's negotiation.", title:"Seal it: nothing leaves", note:"Same request, but the reviewer presses Seal (or cancels at World). The frontier model never sees it; the local model answers instead.", prompt:CONTRACT, approver:"alice", hint:"Press Seal" },
-  { t:"Revoked", why:"Second opinion on the liability cap before tomorrow's negotiation.", title:"A verified human whose role was revoked", note:"Carol is a real human, but her ENS approver subname has been unregistered. World ID passes, the ENS role check fails, and nothing is sent.", prompt:CONTRACT, approver:"carol", pre:{ label:"Revoke carol on ENS", run:revokeCarol } },
-  { t:"Two humans", why:"Prep for Thursday's pricing call.", title:"High risk needs two different humans", note:"TSMC is de-identified, but the context still gives it away, and the local re-identification test catches it. High risk, so the ENS policy (airlock.highRiskQuorum = 2) requires two different verified humans. Approve as alice, then as bob. The same person can't count twice: a repeated name is refused, and with World App QR even a different name on the same World ID is refused.", prompt:"CONFIDENTIAL. Our client TSMC, the Hsinchu-based foundry that manufactures Apple's A-series chips and is the world's largest contract chipmaker, wants to renegotiate volume pricing. Draft two talking points.", approver:"alice", hint:"Approve as alice, then bob" },
-  { t:"New agent", agent:"intern-bot", why:"Quick summary for the team.", title:"A brand-new agent is safe by default", note:"intern-bot.agents.airlock.eth was never registered. ENSv2 wildcard resolution gives it the org's default policy record (internal data only), so confidential data can't leave with zero setup. contract-agent and nda-agent instead link to one shared policy record: edit it once and both change.", prompt:CONTRACT },
-  { t:"Proof", title:"Every decision is on the record", note:"The ledger is a hash chain; its Merkle root is anchored to audit.airlock.eth. The agent's policy and who may change it live in ENS.", proof:true },
+/* ---------- playground ---------- */
+// Sample requests, so a new user can see each path without writing one. Fictional names on purpose: famous
+// placeholders (Acme, Globex…) get re-identified by the local attack test.
+const EXAMPLES = [
+  { label:"Public question", prompt:"In one sentence: why does an airlock have two doors?" },
+  { label:"Contract review (confidential)", why:"Second opinion on the liability cap before tomorrow's negotiation.", prompt:"CONFIDENTIAL. Review this clause for Kestrelwood Analytics: \"Morrow Vale Logistics will pay $2,400,000 per year; Kestrelwood's liability is capped at $50,000.\" Client contact: Daniel Okafor (d.okafor@morrowvale.example). In two sentences: what's the biggest risk for Kestrelwood Analytics?" },
+  { label:"Client pricing (high risk, two approvers)", why:"Prep for Thursday's pricing call.", prompt:"CONFIDENTIAL. Our client TSMC, the Hsinchu-based foundry that manufactures Apple's A-series chips and is the world's largest contract chipmaker, wants to renegotiate volume pricing. Draft two talking points." },
 ];
-let sceneIdx = 0, demo = { inflight:false, id:null, meta:null, session:null, done:new Set() }, deidView = "readable";
+const approverRole = () => ensState?.approverRole || `legal.approvers.${cfg.org ?? "airlock.eth"}`;
+let demo = { inflight:false, id:null, meta:null, session:null }, deidView = "readable";
+function newConversation() {
+  $("#demoConvo").innerHTML = `<div class="muted">Ask something, or pick one of the examples.</div>`; $("#demoTrace").innerHTML = "";
+  $("#heldCard")?.remove();
+  demo = { inflight:false, id:null, meta:null, session:`pg-${Math.random().toString(36).slice(2, 9)}`, history:[] };
+  renderAirlock(null);
+}
 /** De-identified text, readable for the local reviewer: real name + its label. The model only ever gets the label. */
 function deidReadable(r) {
   const map = r.mapping ?? {};
@@ -784,42 +846,6 @@ function deidReadable(r) {
     return real ? `<span class="chip rd" data-ph="${type}_${n}" data-type="${type}"><span class="rl">${type}·${n}</span>${esc(real)}</span>` : `<span class="chip">${type}·${n}</span>`;
   });
 }
-function renderScenes() {
-  $("#scenes").innerHTML = SCENES().map((x, i) => `<li><button data-i="${i}" class="${i === sceneIdx ? "on" : ""} ${demo.done.has(i) ? "done" : ""}"><b>${String(i + 1).padStart(2, "0")}</b><span>${x.t}</span></button></li>`).join("");
-  $$("#scenes button").forEach((b) => (b.onclick = () => { sceneIdx = +b.dataset.i; renderScene(); }));
-}
-function renderScene() {
-  renderScenes();
-  const x = SCENES()[sceneIdx];
-  $("#sceneNo").textContent = `Scene ${sceneIdx + 1} of ${SCENES().length}`;
-  $("#sceneTitle").textContent = x.title;
-  $("#sceneNote").textContent = x.note;
-  const agents = [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")];
-  $("#demoAgent").innerHTML = agents.map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join("");
-  $("#demoAgent").value = x.agent ? cfg.defaultAgent.replace(/^[^.]+/, x.agent) : cfg.defaultAgent;
-  const acts = [];
-  if (x.pre) acts.push(`<button class="btn" id="scenePre">${esc(x.pre.label)}</button>`);
-  if (x.proof) acts.push(`<button class="btn" id="goLedger">Verify chain</button><button class="btn" id="goEns">Open ENS</button><button class="btn dark" id="goAnchor">Anchor to ENS</button>`);
-  else acts.push(`<button class="btn dark" id="sceneRun">Run scene ▸</button>`);
-  if (sceneIdx < SCENES().length - 1) acts.push(`<button class="btn" id="sceneNext">Next →</button>`);
-  $("#sceneActions").innerHTML = acts.join("");
-  $("#scenePre") && ($("#scenePre").onclick = () => x.pre.run($("#scenePre")));
-  $("#sceneRun") && ($("#sceneRun").onclick = () => runScene());
-  $("#sceneNext") && ($("#sceneNext").onclick = () => { sceneIdx++; renderScene(); });
-  if (x.proof) {
-    $("#goLedger").onclick = () => { tab("ledger"); setTimeout(() => $("#verify").click(), 300); };
-    $("#goEns").onclick = () => tab("ens");
-    $("#goAnchor").onclick = async () => { $("#goAnchor").textContent = "Anchoring… (Sepolia tx)"; const a = await post("/audit/anchor"); $("#goAnchor").textContent = "Anchor to ENS"; toast(a.error ? "ANCHOR FAILED" : "ANCHORED TO ENS", a.error ?? `root ${a.root.slice(0, 12)}… tx ${a.tx?.slice(0, 12)}…`); };
-  }
-  if (!demo.inflight) renderAirlock(null);
-}
-async function revokeCarol(btn) {
-  const name = `carol.${role()}`;
-  btn.disabled = true; btn.textContent = "Revoking on ENS… (Sepolia tx)";
-  const d = await post("/admin/revoke", { approverName:name });
-  btn.textContent = d.error ? "Revoke failed" : "✓ carol revoked";
-  toast(d.error ? "REVOKE FAILED" : "REVOKED ON ENS", d.error ?? `${name} unregistered`);
-}
 function bubble(role, text) {
   const el = document.createElement("div"); el.className = `turn ${role}`;
   el.innerHTML = role === "bot" ? `<span class="who">agent ← model</span>` : "";
@@ -827,24 +853,22 @@ function bubble(role, text) {
   $("#demoConvo").querySelector(".muted")?.remove(); $("#demoConvo").append(el); $("#demoConvo").scrollTop = $("#demoConvo").scrollHeight;
   return el;
 }
-function runScene() {
-  const x = SCENES()[sceneIdx];
-  $("#demoConvo").innerHTML = ""; $("#demoTrace").innerHTML = "";
-  demo.session = `demo-${sceneIdx + 1}-${Math.random().toString(36).slice(2, 7)}`; // fresh session: no approval reuse across scenes
-  $("#demoWhy").value = x.why ?? "";
-  demoSend(x.prompt, [], sceneIdx);
-}
-$("#demoSend").onclick = () => { const t = $("#demoInput").value.trim(); if (!t) return; $("#demoInput").value = ""; demo.session ??= `demo-free-${Math.random().toString(36).slice(2, 7)}`; demoSend(t, demo.history ?? [], null); };
+$("#demoSend").onclick = () => { const t = $("#demoInput").value.trim(); if (!t) return; $("#demoInput").value = ""; demo.session ??= `pg-${Math.random().toString(36).slice(2, 9)}`; demoSend(t, demo.history ?? []); };
+$("#pgNew").onclick = newConversation;
+$("#pgExample").onchange = () => {
+  const x = EXAMPLES[+$("#pgExample").value]; $("#pgExample").value = ""; if (!x) return;
+  $("#demoInput").value = x.prompt; $("#demoWhy").value = x.why ?? ""; $("#demoInput").focus();
+};
 $("#demoInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#demoSend").click(); });
-async function demoSend(text, history, scene) {
+async function demoSend(text, history) {
   const messages = [...history, { role:"user", content:text }];
   bubble("user", text);
   const bot = bubble("bot", ""); bot.classList.add("streaming"); const body = bot.lastChild;
-  demo = { ...demo, inflight:true, id:null, meta:null, scene };
+  demo = { ...demo, inflight:true, id:null, meta:null };
   renderAirlock(null, "checking");
   let answer = "";
   try {
-    const headers = { "content-type":"application/json", "x-airlock-session":demo.session, "x-airlock-agent":$("#demoAgent").value, "x-airlock-user":encodeURIComponent($("#demoUser").value.trim()) };
+    const headers = { "content-type":"application/json", "x-airlock-session":demo.session, "x-airlock-agent":$("#demoAgent").value, "x-airlock-user":encodeURIComponent(profile.user ?? "") };
     if ($("#demoWhy").value.trim()) headers["x-airlock-justification"] = encodeURIComponent($("#demoWhy").value.trim());
     const res = await fetch("/v1/chat/completions", { method:"POST", headers, body:JSON.stringify({ model:`airlock/${cfg.defaultClaudeModel}`, stream:true, messages }) });
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader(); let buf = "";
@@ -859,7 +883,6 @@ async function demoSend(text, history, scene) {
       }
     }
     demo.history = [...messages, { role:"assistant", content:answer }];
-    if (scene !== null) { demo.done.add(scene); renderScenes(); }
   } catch (e) { body.textContent = answer + `\n[error: ${e.message}]`; }
   finally { bot.classList.remove("streaming"); demo.inflight = false; }
 }
@@ -876,7 +899,6 @@ function quorumHTML(r) {
   const slots = Array.from({ length:need }, (_, i) => got[i] ? `<span class="slot ok">✓ ${esc((got[i].approverName ?? "").split(".")[0])}</span>` : `<span class="slot">human ${i + 1}</span>`).join("");
   return `<div class="quorum"><b>Needs ${need} different humans</b>${slots}<span class="muted">World ID proves they're distinct people; ENS proves each holds the role.</span></div>`;
 }
-const nextApprover = (r, fallback) => { const used = new Set((r.approvals ?? []).map((a) => (a.approverName ?? "").split(".")[0])); return ["alice", "bob", "carol"].find((n) => !used.has(n)) ?? fallback; };
 const grantMsg = (d) => d.status === "approved" ? "" : d.status === "partial" ? `✓ Counted ${d.have} of ${d.need}. A second, different human must approve.` : d.reason ?? `${d.status}`;
 const STATE = { pending:["held", "Held at the door"], approved:["cleared", "Cleared"], denied:["sealed", "Sealed"], expired:["sealed", "Expired"], role_invalid:["sealed", "Role check failed"], proof_invalid:["sealed", "Proof rejected"] };
 async function renderAirlock(r, phase) {
@@ -897,17 +919,15 @@ async function renderAirlock(r, phase) {
   const [cls, label] = STATE[r.status] ?? ["idle", r.status];
   // Model view: labels only, no hover tooltips carrying real names — literally what leaves.
   const redacted = esc(r.redactedPreview).replace(/^\[user\] /gm, "").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, (m, type, n) => `<span class="chip">${type}·${n}</span>`);
-  const x = SCENES()[demo.scene ?? sceneIdx] ?? {};
   const findings = r.findings?.length ? " · " + r.findings.map((f) => esc(f).replace(/^local attacker re-identified/, "re-identification test cracked").replace(/&lt;([A-Z_]+)_(\d+)&gt;/g, "$1·$2")).join(" · ") : "";
   let bottom;
   if (r.status === "pending") {
-    // Only pre-fill when the scene's approver actually holds this role (scene 5 needs a data owner nobody holds).
-    const name = r.requiredRole === role() ? `${(r.quorum ?? 1) > 1 ? nextApprover(r, x.approver ?? "alice") : x.approver ?? "alice"}.${r.requiredRole}` : "";
+    const name = approverFor(r.requiredRole);
     bottom = `<div class="demo-decide">
       ${quorumHTML(r)}
       <label class="eyebrow" style="margin:0">Approver (ENS) · needs <span class="mono">${esc(r.requiredRole)}</span></label>
-      <div class="approver-row"><input class="field" id="demoApprover" value="${esc(name)}" placeholder="no one holds ${esc(r.requiredRole)} yet" />${viaToggle()}</div>
-      <div class="hint-row">${x.hint ? `<span class="muted">▸ ${esc(x.hint)}</span>` : "<span></span>"}<button class="linkish" id="demoNoteToggle">+ Add a note for the requester</button></div>
+      <div class="approver-row"><input class="field" id="demoApprover" value="${esc(name)}" placeholder="you.${esc(r.requiredRole)}" />${viaToggle()}</div>
+      <div class="hint-row"><span></span><button class="linkish" id="demoNoteToggle">+ Add a note for the requester</button></div>
       <input class="field" id="demoNote" placeholder="Note to the requester (sent with Seal)" hidden />
       <div class="row2"><button class="seal" id="demoSeal" title="Deny: nothing is sent; the local model answers instead">Seal (deny)</button><button class="hold" id="demoHold" title="Press and hold ~1s, then verify with World ID"><i class="fill"></i><span>Hold, then verify with World ID</span></button></div>
       <div id="demoQr"></div><div class="out" id="demoOut"></div></div>`;
@@ -1012,6 +1032,59 @@ function notify(request) {
 }
 
 /* ---------- live ---------- */
+/* ---------- overview ---------- */
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : new Date(t).toLocaleDateString(); };
+async function loadOverview() {
+  const [a, q] = await Promise.all([j("/audit"), j("/approvals")]);
+  const recs = a.records, day = Date.now() - 86400000, today = recs.filter((r) => r.timestamp > day);
+  const c = (d, list = today) => list.filter((x) => x.decision === d).length;
+  $("#ovTitle").textContent = cfg.org ? `${cfg.org}` : "Airlock";
+  $("#ovSub").textContent = `Local AI by default. Frontier AI only with a verified human's consent. ${a.chain.ok ? "Audit chain intact." : `Audit chain broken at #${a.chain.brokenAt}.`}`;
+  $("#ovStats").innerHTML = [[today.length, "requests · 24h"], [c("auto"), "auto-sent"], [c("approved"), "approved"], [c("denied") + c("expired"), "sealed"], [c("blocked") + c("local"), "kept local"], [today.reduce((s, x) => s + (x.deidentified ?? 0), 0), "fields de-identified"]]
+    .map(([v, l]) => `<div class="stat"><b>${v}</b>${l}</div>`).join("");
+  const pend = q.filter((r) => r.status === "pending");
+  $("#ovPending").innerHTML = pend.length ? pend.map((r) => `<div class="prow"><span><b>${esc(r.requester || short(r.agent))}</b> <span class="muted">→ ${esc(r.targetModel)} · risk ${esc(r.riskLevel)}${(r.quorum ?? 1) > 1 ? ` · ${r.approvals?.length ?? 0}/${r.quorum} approvals` : ""}</span></span><button class="btn" data-open="${r.id}">Review</button></div>`).join("")
+    : `<div class="muted">Nothing waiting. Confidential requests appear here until a verified approver decides.</div>`;
+  $$("[data-open]", $("#ovPending")).forEach((b) => (b.onclick = () => { tab("queue"); show(b.dataset.open); }));
+  $("#ovRecent").innerHTML = recs.length ? `<table class="matrix"><tr><th>time</th><th>requester</th><th>agent</th><th>decision</th><th>fields</th><th style="text-align:left">reason</th></tr>` +
+    recs.slice(-10).reverse().map((r) => `<tr><td>${ago(r.timestamp)}</td><td>${esc(r.requester ?? "—")}</td><td>${esc(short(r.agent))}</td><td><span class="tag ${r.decision === "auto" || r.decision === "approved" ? "approved" : "denied"}">${esc(DECISION[r.decision] ?? r.decision)}</span></td><td>${r.deidentified ?? 0}</td><td style="text-align:left" class="muted">${esc((r.reason ?? "").slice(0, 90))}</td></tr>`).join("") + `</table>`
+    : `<div class="muted">No requests yet. <a href="#" onclick="tab('connect');return false">Connect an agent</a> or try the <a href="#" onclick="tab('playground');return false">Playground</a>.</div>`;
+  $("#ovStatus").innerHTML = `<div class="muted">Checking…</div>`;
+  const s = await j("/status").catch(() => ({}));
+  $("#ovStatus").innerHTML = Object.entries(s).map(([k, v]) => `<div class="srow ${v.ok ? "" : "bad"}"><span class="dot"></span><b>${esc(k)}</b><span class="muted mono" style="font-size:12px; word-break:break-all">${esc(v.detail)}</span></div>`).join("") || `<div class="muted">Status unavailable.</div>`;
+}
+$("#ovRefresh").onclick = loadOverview;
+
+/* ---------- approvers ---------- */
+async function loadApprovers() {
+  $("#apRole").textContent = `role ${approverRole()}`;
+  if (!$("#enrollName").placeholder.includes(approverRole())) { $("#enrollName").placeholder = `name.${approverRole()}`; $("#ensName").placeholder = `name.${approverRole()}`; }
+  $("#apList").innerHTML = `<div class="muted">Reading ENS…</div>`;
+  const list = await j("/approvers").catch((e) => ({ error:e.message }));
+  if (!Array.isArray(list)) { $("#apList").innerHTML = `<div class="muted">${esc(list.error)}</div>`; return; }
+  const live = (s) => s === "valid";
+  $("#apList").innerHTML = list.length ? `<table class="matrix"><tr><th style="text-align:left">approver</th><th>status</th><th>last approval</th><th></th></tr>` +
+    list.sort((a, b) => Number(live(b.status)) - Number(live(a.status)) || (b.lastSeen ?? 0) - (a.lastSeen ?? 0)).map((x) => `<tr><td style="text-align:left">${ensApp(x.name)}${profile.approver === x.name ? ' <span class="muted">(you)</span>' : ""}</td><td><span class="tag ${live(x.status) ? "approved" : "denied"}">${esc(live(x.status) ? "live" : x.status)}</span></td><td>${x.lastSeen ? ago(x.lastSeen) : "—"}</td><td><button class="linkish" data-look="${esc(x.name)}">manage</button></td></tr>`).join("") + `</table>`
+    : `<div class="muted">No approvers yet. Enroll the first one with World ID.</div>`;
+  $$("[data-look]", $("#apList")).forEach((b) => (b.onclick = () => { $("#ensName").value = b.dataset.look; checkApprover(); }));
+}
+$("#apRefresh").onclick = loadApprovers;
+
+/* ---------- connect ---------- */
+function renderConnect() {
+  const base = `${(cfg.publicUrl ?? location.origin).replace(/\/$/, "")}/v1`, model = `airlock/${cfg.defaultClaudeModel}`, agent = cfg.defaultAgent;
+  const block = (title, note, code) => `<div class="panel"><h3>${title}</h3>${note ? `<p class="muted" style="margin:-4px 0 6px; font-size:13px">${note}</p>` : ""}<pre class="code">${esc(code)}</pre><button class="copy" data-copy="${esc(code)}" style="margin-top:6px">copy</button></div>`;
+  $("#connectBody").innerHTML = [
+    block("Endpoint", "Any OpenAI-compatible client works. Models prefixed <b>airlock/</b> go through the airlock; everything else runs on the local model.", `Base URL   ${base}\nModel      ${model}\nAPI key    your Airlock access token`),
+    block("Headers", "<b>agent</b>: its ENS name selects the policy · <b>user</b>: shown to approvers and audited · <b>session</b>: one approval covers the conversation · <b>justification</b>: optional, shown to approvers.", `x-airlock-agent: ${agent}\nx-airlock-user: you@company.com\nx-airlock-session: <conversation id>\nx-airlock-justification: <why>`),
+    block("curl", "", `curl ${base}/chat/completions \\\n  -H "authorization: Bearer $AIRLOCK_TOKEN" \\\n  -H "content-type: application/json" \\\n  -H "x-airlock-agent: ${agent}" \\\n  -H "x-airlock-user: you@company.com" \\\n  -d '{"model":"${model}","messages":[{"role":"user","content":"Hello"}]}'`),
+    block("Python (openai)", "", `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key=AIRLOCK_TOKEN,\n    default_headers={"x-airlock-agent": "${agent}",\n                     "x-airlock-user": "you@company.com"})\nr = client.chat.completions.create(model="${model}",\n    messages=[{"role": "user", "content": "Hello"}])\nprint(r.choices[0].message.content)`),
+    block("LibreChat", "librechat.yaml → endpoints.custom", `- name: "Airlock"\n  apiKey: "\${AIRLOCK_TOKEN}"\n  baseURL: "${base}"\n  models: { default: ["${model}"] }\n  headers:\n    x-airlock-agent: "${agent}"\n    x-airlock-user: "{{LIBRECHAT_USER_EMAIL}}"`),
+    block("What happens to a request", "", `1. Classified and de-identified locally (names → ORG_1, PERSON_1 …)\n2. Re-identification test by the local model\n3. Policy read from the agent's ENS name\n4. Public → sent · confidential → waits for an approver (World ID + ENS role)\n   · blocked / sealed → answered by the local model\n5. Answer re-identified on the way back; decision appended to the audit chain`),
+  ].join("");
+  $$(".copy", $("#connectBody")).forEach((b) => (b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1200); } catch {} }));
+}
+
 function toast(title, body, onclick) {
   const t = document.createElement("div"); t.className = "toast"; t.innerHTML = `<b>${esc(title)}</b>${esc(body)}`;
   t.onclick = () => { onclick?.(); t.remove(); }; $("#toasts").append(t); setTimeout(() => t.remove(), 5000);
@@ -1023,20 +1096,27 @@ function tick(decision) {
 
 (async () => {
   cfg = await j("/config");
-  const org = (cfg.defaultAgent ?? "").split(".").slice(-2).join(".");
-  $("#mode").textContent = `World ID · ${cfg.worldIdMode === "mock" ? "mock" : cfg.worldIdAgents ? "Agents sandbox" : "staging"}  ·  ENS · ${cfg.ensMode.startsWith("sepolia") ? `${org} (Sepolia)` : "local JSON"}`;
-  $("#mode").title = `World ID mode: ${cfg.worldIdMode}${cfg.worldIdAgents ? " + World ID for Agents (OIDC)" : ""}\nENS: ${cfg.ensMode}`;
+  $("#orgName").textContent = cfg.org ?? "";
   via = cfg.worldIdAgents ? "oidc" : "idkit";
   paintBell();
-  try { $("#demoUser").value = localStorage.getItem("airlock.user") || "sam@kestrelwood.example"; } catch { $("#demoUser").value = "sam@kestrelwood.example"; }
-  $("#demoUser").onchange = () => { try { localStorage.setItem("airlock.user", $("#demoUser").value.trim()); } catch {} };
+  $("#profileBtn").onclick = openProfile;
+  $("#profileDlg").addEventListener("close", () => {
+    if ($("#profileDlg").returnValue !== "save") return;
+    profile.user = $("#pfUser").value.trim(); profile.approver = $("#pfApprover").value.trim().toLowerCase(); saveProfile();
+  });
+  paintProfile();
+  const agents = [cfg.defaultAgent, cfg.defaultAgent.replace(/^[^.]+/, "nda-agent"), cfg.defaultAgent.replace(/^[^.]+/, "intern-bot")];
+  $("#demoAgent").innerHTML = agents.map((a) => `<option value="${esc(a)}">${esc(short(a))}</option>`).join("");
+  $("#pgExample").innerHTML = `<option value="">Examples…</option>` + EXAMPLES.map((x, i) => `<option value="${i}">${esc(x.label)}</option>`).join("");
+  newConversation();
   $("#enrollVia").innerHTML = viaToggle(); wireVia($("#enrollVia"));
   (await j("/audit")).records.slice(-40).forEach((r) => tick(r.decision));
   const hash = location.hash.slice(1);
   await loadQueue();
-  if (["ledger", "ens", "demo"].includes(hash) || !hash) tab(hash || "demo");
-  else if (hash === "enroll") tab("ens");
+  if (!hash || TABS.includes(hash)) tab(hash || "overview");
+  else if (hash === "enroll") tab("approvers");
   else { selected = hash; tab("queue"); show(selected); }
+  if (!profile.user) openProfile();
 
   // Live updates by polling a numbered event log: works through any proxy (Cloudflare tunnels buffer idle
   // SSE GETs). Events are dispatched to the same listeners an EventSource would use.
@@ -1055,9 +1135,9 @@ function tick(decision) {
   })();
   es.addEventListener("approval.created", (e) => {
     const { request } = JSON.parse(e.data);
-    loadQueue();
+    loadQueue(); if (!$("#tab-overview").hidden) loadOverview();
     notify(request);
-    if (demo.inflight && !$("#tab-demo").hidden && !demo.id) demoApproval(request.id);
+    if (demo.inflight && !$("#tab-playground").hidden && !demo.id) demoApproval(request.id);
     else toast("HELD AT THE DOOR", `${short(request.agent)} → ${request.targetModel}`, () => { tab("queue"); show(request.id); });
   });
   es.addEventListener("approval.progress", (e) => {
@@ -1086,7 +1166,7 @@ function tick(decision) {
     if (request.id === demo.id) demoApproval(request.id);
     if (request.status !== "approved") sealFlash();
   });
-  es.addEventListener("audit.appended", (e) => { tick(JSON.parse(e.data).decision); if (!$("#tab-ledger").hidden) loadLedger(); });
+  es.addEventListener("audit.appended", (e) => { tick(JSON.parse(e.data).decision); if (!$("#tab-ledger").hidden) loadLedger(); if (!$("#tab-overview").hidden) loadOverview(); });
   window.addEventListener("message", (e) => {
     // World redirects to the public URL, so the popup's origin may differ from ours: trust the window we opened, not the origin.
     if (e.data?.airlock !== "worldid-done" || (e.origin !== location.origin && e.source !== worldidPopup)) return;
@@ -1097,8 +1177,8 @@ function tick(decision) {
       await loadQueue();
       if (demo.id) await demoApproval(demo.id);
       if (selected && !$("#tab-queue").hidden) await show(selected);
-      if (!$("#tab-ens").hidden) loadEns();
-      const out = !$("#tab-demo").hidden ? $("#demoOut") : !$("#tab-ens").hidden ? $("#enrollOut") : $("#out");
+      if (!$("#tab-approvers").hidden) loadApprovers();
+      const out = !$("#tab-playground").hidden ? $("#demoOut") : !$("#tab-approvers").hidden ? $("#enrollOut") : $("#out");
       if (out && e.data.title && !/^Approved|^Enrolled/.test(e.data.title)) out.textContent = msg;
     })();
   });
