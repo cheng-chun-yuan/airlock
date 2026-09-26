@@ -9,7 +9,7 @@ Local AI by default · frontier AI by human consent · accountability on-chain.
 **Airlock is an OpenAI-compatible gateway that stops AI agents from sending confidential data to frontier models unless a verified human with the right on-chain role approves that exact payload.**
 
 - **Live:** <https://airlock.polyoctant.com>. Sign in with any wallet (a signature, no transaction). Try the shared demo, or create your own gateway.
-- **ENS name:** [`airlock.eth`](https://app.ens.dev/airlock.eth) on ENSv2 Sepolia.
+- **ENS name:** [`airlock-hq.eth`](https://app.ens.dev/airlock-hq.eth) on ENSv2 Sepolia (the live site's root: gateways are `<slug>.airlock-hq.eth`). The original hackathon deployment is [`airlock.eth`](https://app.ens.dev/airlock.eth).
 - **Built at:** ETHGlobal Tokyo 2026.
 
 ## Why Airlock
@@ -25,7 +25,7 @@ Teams want AI agents to work on real documents: contracts, pricing, client email
 An OpenAI-compatible gateway that sits between agents and models. Anyone can run one for their team in a minute:
 - **Local first.** Your local model de-identifies each request, then plays attacker and tries to re-identify it. It answers by itself when nothing may leave.
 - **Human consent at the door.** A confidential request waits until a **verified human** holding a **live approver role** approves **that exact payload**. High-risk requests need **two different humans**.
-- **Policy, roles and audit on ENS.** Each gateway gets `<name>.airlock.eth`, owned by the creator's wallet. Its policy, approvers and audit anchor live under that name, and every request reads the policy live.
+- **Policy, roles and audit on ENS.** Each gateway gets `<name>.airlock-hq.eth`, owned by the creator's wallet. Its policy, approvers and audit anchor live under that name, and every request reads the policy live.
 - **Self-serve.** Sign in with a wallet, bring your own local and frontier models, invite people with roles (member / approver / admin), give each person their own API key, and assign each person an **agent** whose ENS policy governs everything they send.
 - **Accountable.** Every decision goes into a hash-chained log whose Merkle root is anchored on ENS. The platform itself can't rewrite your policy after setup.
 
@@ -38,11 +38,11 @@ Every approval has to be made by a real person, and for high-risk requests two d
 
 ### Why ENS
 We needed policy and roles that the team owns, that anyone can check, and that can be revoked. ENSv2 covers all three:
-- **The policy *is* the ENS record.** `policy.<name>.airlock.eth` holds the records (`maxClass`, `egress`, `models`, `highRiskQuorum`), and the gateway reads them on every request. Change a record and the next request obeys it.
-- **Roles are names, revocation is unregistering.** An approver is `alice.approvers.<name>.airlock.eth`. Remove the subname and she can't approve, even with a valid World ID.
+- **The policy *is* the ENS record.** `policy.<name>.airlock-hq.eth` holds the records (`maxClass`, `egress`, `models`, `highRiskQuorum`), and the gateway reads them on every request. Change a record and the next request obeys it.
+- **Roles are names, revocation is unregistering.** An approver is `alice.approvers.<name>.airlock-hq.eth`. Remove the subname and she can't approve, even with a valid World ID.
 - **Ownership is real.** The creator's wallet holds the resolver and registries. After setup the platform hands them over: it can't change the policy, and every change is a transaction the owner signs.
 - **ENSv2 features doing real work.** Wildcard resolution gives every agent a default policy for free. `linkToNode` aliasing points many agents at one named policy (edit once, all follow). Enhanced Access Control decides who may write which record.
-- **A public anchor.** The audit log's Merkle root lives at `audit.<name>.airlock.eth`, so anyone can check the log wasn't rewritten.
+- **A public anchor.** The audit log's Merkle root lives at `audit.<name>.airlock-hq.eth`, so anyone can check the log wasn't rewritten.
 
 Agents (LibreChat, Hermes, Claude Code, anything that speaks the OpenAI API) point at Airlock instead of a model provider. Every request goes through the same airlock:
 
@@ -73,16 +73,16 @@ agent ──OpenAI API──▶  Router → Redactor → Risk (local attack test
 Anyone can run their own airlock, with their own models and people:
 
 1. **Sign in with a wallet** (SIWE: a signature, no gas).
-2. **Create a gateway.** Pick a name, e.g. `acme-legal` → **`acme-legal.airlock.eth`** is registered on Sepolia with its own resolver and registries, and your wallet holds every role on them. The policy (`policy.acme-legal.airlock.eth`), the approver role (`approvers.…`) and the audit anchor (`audit.…`) live under it.
+2. **Create a gateway.** Pick a name, e.g. `acme-legal` → **`acme-legal.airlock-hq.eth`** is registered on Sepolia with its own resolver and registries, and your wallet holds every role on them. The policy (`policy.acme-legal.airlock-hq.eth`), the approver role (`approvers.…`) and the audit anchor (`audit.…`) live under it.
 3. **Bring your models.** Local: the Airlock-hosted model, or any OpenAI-compatible endpoint you run (vLLM, Ollama, LM Studio; from a laptop, expose it with a tunnel). Frontier: the Airlock-hosted model (no key needed, 5 frontier requests per person per hour), or Anthropic / any OpenAI-compatible API with your own key (encrypted at rest, never shown again).
-4. **Invite people** with a one-time link and a role: **member** (sends requests), **approver** (verifies once with World ID; gets `<name>.approvers.acme-legal.airlock.eth`), **admin** (settings and members).
+4. **Invite people** with a one-time link and a role: **member** (sends requests), **approver** (verifies once with World ID; gets `<name>.approvers.acme-legal.airlock-hq.eth`), **admin** (settings and members).
 5. **Connect agents** with a per-member API key (`alk_…`). The key alone picks the gateway and the person: identity headers from clients are ignored, and an approver can only approve as themselves.
 
 Removing a member deletes their keys and revokes their approver name on ENS.
 
-**Agents: what each person may send out, decided on ENS.** Admins create agents (`intern-bot.agents.acme-legal.airlock.eth`) and assign one to each member. Everything that member sends, from any of their keys or the Playground, runs under that agent's policy; they can't pick another. An agent follows the gateway policy by default (ENS wildcard: no transaction), or is linked to a named policy such as `strict.policy.acme-legal.airlock.eth` with ENSv2 `linkToNode`, signed by the owner's wallet. Edit `strict` once and every agent linked to it, and every person assigned to those agents, follows on their next request. Admins can also make service keys that run as a specific agent (bots, CI).
+**Agents: what each person may send out, decided on ENS.** Admins create agents (`intern-bot.agents.acme-legal.airlock-hq.eth`) and assign one to each member. Everything that member sends, from any of their keys or the Playground, runs under that agent's policy; they can't pick another. An agent follows the gateway policy by default (ENS wildcard: no transaction), or is linked to a named policy such as `strict.policy.acme-legal.airlock-hq.eth` with ENSv2 `linkToNode`, signed by the owner's wallet. Edit `strict` once and every agent linked to it, and every person assigned to those agents, follows on their next request. Admins can also make service keys that run as a specific agent (bots, CI).
 
-**What the platform can and can't do.** After setup the platform hands the gateway over: its key keeps only `airlock.approver` (to enroll approvers) and `airlock.auditRoot` (to anchor the audit log). It **can't change your policy**: a policy change is a transaction your wallet signs, and the gateway checks the receipt before saving. One power remains, by the nature of subnames: the platform controls `airlock.eth`, so it could point `<slug>.airlock.eth` elsewhere (take the name back). It can't rewrite your policy under it.
+**What the platform can and can't do.** After setup the platform hands the gateway over: its key keeps only `airlock.approver` (to enroll approvers) and `airlock.auditRoot` (to anchor the audit log). It **can't change your policy**: a policy change is a transaction your wallet signs, and the gateway checks the receipt before saving. One power remains, by the nature of subnames: the platform controls `airlock-hq.eth`, so it could point `<slug>.airlock-hq.eth` elsewhere (take the name back). It can't rewrite your policy under it.
 
 ## 🧑‍⚖️ For judges: the 3-minute tour
 
@@ -203,6 +203,13 @@ airlock.eth                                   UserRegistry (own subregistry), no
   - links: contract-agent [`0x559d8ef1…`](https://sepolia.etherscan.io/tx/0x559d8ef13308a9d2eb62d2949a8024119b12d10305ddbbb267bb49884fd54512), nda-agent [`0x1893fe12…`](https://sepolia.etherscan.io/tx/0x1893fe128340ac36639b02028aee9b0c570702f290dfb121aeee8a8ac8291a94)
   - org default record [`0x33709462…`](https://sepolia.etherscan.io/tx/0x33709462ee7a056aca907c280c767958ca4c80d7928f8bdb2107246eaaf9a4c4)
   - `agents.airlock.eth` wildcard resolver [`0xb176e942…`](https://sepolia.etherscan.io/tx/0xb176e94254ea7520fdcca6a9b3712047389ffce153e0f12db7c355d95cf1ea4b)
+- **Live deployment: `airlock-hq.eth`** (Sepolia, 2026-09-27, root of <https://airlock.polyoctant.com>; platform key [`0xf2C1953A…`](https://sepolia.etherscan.io/address/0xf2C1953A54c50Cf916f86E07906A83d0C6Aea946)):
+  - name registered [`0xf7affe9b…`](https://sepolia.etherscan.io/tx/0xf7affe9b11cf60e5d3b9981978337c1bbe13d67f413dc953188cd3cf5366c978), records multicall [`0x98f352b7…`](https://sepolia.etherscan.io/tx/0x98f352b7d06a5d6ecdd4effce382a35d2b3b6e96a45e26ba5c85b78bbbd8a342)
+  - PermissionedResolver [`0x4a649d15…`](https://sepolia.etherscan.io/address/0x4a649d15E7759e06159DFD300488097cF4Aa57f9)
+  - registries: root [`0x67eD8EA9…`](https://sepolia.etherscan.io/address/0x67eD8EA955C7bdF8E9782e46fDBbC8Faa62f9A61), agents [`0x1247a5bC…`](https://sepolia.etherscan.io/address/0x1247a5bC037c3696CB3d97D5B31C9E7Cec504a9d), approvers [`0x22195110…`](https://sepolia.etherscan.io/address/0x221951108073e0108F5F8D439A009838C3eF67b1), legal [`0xf76EdfbE…`](https://sepolia.etherscan.io/address/0xf76EdfbE2B40164f5C9b0faf1097025B0CE76A90)
+  - subnames: agents [`0x4cc4a046…`](https://sepolia.etherscan.io/tx/0x4cc4a04635d7da425845670ba11f18549225a3d4b526040c825c5b59b045ce07), approvers [`0x9406702d…`](https://sepolia.etherscan.io/tx/0x9406702d50eec89bb6798f6393831fba2d0693056dc879b38ffb05913e27c6f6), audit [`0xdbaf824b…`](https://sepolia.etherscan.io/tx/0xdbaf824b2b6450c74cfa4109817e12e37e1746d32ed29101dea60c184248acc0), contract-agent [`0x434a5521…`](https://sepolia.etherscan.io/tx/0x434a5521fbd320236bc8fbd3e364c0ca4c9aa06eaa134e7e7a11617ff492381e), legal.approvers [`0x207c3d95…`](https://sepolia.etherscan.io/tx/0x207c3d959ef969d7404213f55d0440128b37b26851c8889893174d0bad74ad99), alice.legal.approvers [`0xb6ed7e92…`](https://sepolia.etherscan.io/tx/0xb6ed7e92f5758b546c98588669ebb09253dd0a9c43776a592285ed4742bbb87a)
+  - EAC split (security [`0x0ab860A9…`](https://sepolia.etherscan.io/address/0x0ab860A9a3317D40093AAF28a7cbbFe0782351cd)): admin grant [`0x28a6edf7…`](https://sepolia.etherscan.io/tx/0x28a6edf72e6fbb542b6447c79ed32e4064fe6db69406241901a68a16f8343692), gateway grants [`0xeec7ee41…`](https://sepolia.etherscan.io/tx/0xeec7ee411528bb696d3b6fab535720df65e62d57171428d9382d5d2ecdd5c53a) (approver) and [`0x26e19e3d…`](https://sepolia.etherscan.io/tx/0x26e19e3d6e98a044cdb758f4ddf173aaf955b365b80929a7ca75323cbe135e68) (auditRoot), gateway root roles revoked [`0x4be949cc…`](https://sepolia.etherscan.io/tx/0x4be949cca6215cf0a56917000bae85e92f99c9302e1e75124837420d742895fa)
+  - shared policy: legal policy written by security [`0xeceadf90…`](https://sepolia.etherscan.io/tx/0xeceadf90080b8540592ccdda92436e85579fc07d12d3786e93b18715d35c1d11), links contract-agent [`0x83352df3…`](https://sepolia.etherscan.io/tx/0x83352df3a52c61bbdf61c9d8b0d6205f5bdbef68978992dea6e6df5bcad8f6c9) and nda-agent [`0x0660e32d…`](https://sepolia.etherscan.io/tx/0x0660e32d4c6269c4bdc4e7d142ce48db85e2bb9b13abc9d53ca1fe4b85ff1bb9), org default record [`0x7949b6a3…`](https://sepolia.etherscan.io/tx/0x7949b6a3383f1bab7a442a04cd56830524490bd80ecd596ad371f932e5225fca), `agents.airlock-hq.eth` wildcard resolver [`0xa723dba7…`](https://sepolia.etherscan.io/tx/0xa723dba7336bdb8ae0f3f8738eb6bf506c9aa725f5fb7ce1608ba5ffdf0908cf)
 - **Reproduce the whole tree:** `npm run ens:setup -- <name> <approver>`, then `npm run ens:eac` and `npm run ens:policies`. **Inspect it:** `npm run ens -- check contract-agent.agents.airlock.eth alice.legal.approvers.airlock.eth`.
 
 **AI agents:** each agent is an ENS name whose records *are* its egress policy. Changing `airlock.models` or `airlock.egress` on-chain changes what the agent is allowed to do on the next request, with no redeploy.
@@ -251,7 +258,7 @@ npm run mb:setup                            # optional: index the ENS contracts 
 
 - **Zero config:** runs with a mock World ID and JSON policies.
 - **Real World ID, ENS, OIDC and egress:** see [docs/SETUP.md](docs/SETUP.md).
-- **Upstreams:** anything OpenAI-compatible (we use a local **codex-lb** with `gpt-5.6-sol`) or Anthropic directly. The ENS `airlock.models` record decides which models are allowed.
+- **Upstreams:** anything OpenAI-compatible (built with a local **codex-lb** with `gpt-5.6-sol`; the live site uses OpenRouter) or Anthropic directly. The ENS `airlock.models` record decides which models are allowed.
 - **Before exposing publicly:** set `PUBLIC_URL` (the sign-in domain) and `GATEWAY_SECRET`. There is no shared access token: people sign in with a wallet, and agents use per-member API keys.
 
 ### Models
@@ -280,6 +287,6 @@ docs/           ARCHITECTURE (中文), SETUP, INTEGRATION-NOTES, REFERENCES, SUB
 
 ## Honest limitations
 - The World ID for Agents sandbox issues a new `sub` per sign-in, so the demo uses **name binding**, which is audited. Commitment binding is the production mode.
-- The live demo runs on a Cloudflare quick tunnel to the machine we hacked on (GB10). The URL changes if the tunnel restarts.
+- The live site runs on a single machine behind a Cloudflare named tunnel (airlock.polyoctant.com). If that machine is off, the site is down.
 - Requests with `tools` use the buffered (non-streaming) path.
 - Redaction is rules + dictionary + optional Presidio/local LLM. It reduces what leaves; it doesn't prove nothing sensitive leaves, which is why the attack test and the human exist.

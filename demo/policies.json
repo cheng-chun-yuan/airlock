@@ -2,7 +2,7 @@
   "contract-agent.agents.acme.eth": {
     "maxClass": "confidential",
     "egress": "approval",
-    "models": "gpt-*,claude-*",
+    "models": "gpt-*,claude-*,openai/gpt-*,anthropic/claude-*",
     "approverRole": "legal.approvers.acme.eth",
     "ownerRole": "owners.acme.eth",
     "highRiskQuorum": 2
@@ -10,7 +10,7 @@
   "public-agent.agents.acme.eth": {
     "maxClass": "internal",
     "egress": "auto",
-    "models": "gpt-*,claude-*",
+    "models": "gpt-*,claude-*,openai/gpt-*,anthropic/claude-*",
     "approverRole": "",
     "highRiskQuorum": 2
   }

@@ -96,7 +96,8 @@ export class LocalModel {
       ...extra,
       model: this.model,
       messages,
-      ...(this.disableThinking && { chat_template_kwargs: { enable_thinking: false } }),
+      // vLLM reads chat_template_kwargs, OpenRouter reads reasoning; each ignores the other.
+      ...(this.disableThinking && { chat_template_kwargs: { enable_thinking: false }, reasoning: { enabled: false } }),
     };
   }
 
@@ -273,7 +274,7 @@ export class OpenAICompatModel implements FrontierModel {
       method: "POST",
       redirect: "error",
       headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
-      body: JSON.stringify({ model, messages, stream: false }),
+      body: JSON.stringify({ model, max_tokens: 4096, messages, stream: false }),
     });
     if (!res.ok) throw new Error(`egress ${res.status}: ${await res.text()}`);
     const j = (await res.json()) as any;
@@ -288,6 +289,6 @@ export class OpenAICompatModel implements FrontierModel {
 
   stream(model: string, messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<Chunk> {
     if (!this.apiKey) throw new Error("egress API key not set");
-    return openaiStream(`${this.baseUrl}/chat/completions`, { authorization: `Bearer ${this.apiKey}` }, { model, messages }, signal);
+    return openaiStream(`${this.baseUrl}/chat/completions`, { authorization: `Bearer ${this.apiKey}` }, { model, max_tokens: 4096, messages }, signal);
   }
 }

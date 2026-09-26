@@ -23,7 +23,7 @@ const requireEnv = (k: string) => env[k] ?? (console.error(`${k} is required`), 
 const root = resolve(import.meta.dirname, "../..");
 const path = (p: string) => resolve(root, p);
 
-const local = new LocalModel(env.LOCAL_BASE_URL ?? "http://localhost:8000/v1", env.LOCAL_MODEL ?? "Qwen/Qwen3.5-35B-A3B-FP8", env.LOCAL_THINKING !== "1");
+const local = new LocalModel(env.LOCAL_BASE_URL ?? "http://localhost:8000/v1", env.LOCAL_MODEL ?? "Qwen/Qwen3.5-35B-A3B-FP8", env.LOCAL_THINKING !== "1", env.LOCAL_API_KEY);
 // Egress: Anthropic directly, or a self-configured OpenAI-compatible upstream
 // (e.g. your own LiteLLM / vLLM). No third-party gateway is used by default.
 const egress: FrontierModel =
@@ -223,7 +223,7 @@ const demoApp = buildApp({
     const t = <T,>(p: Promise<T>, ms = 4000) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error("timeout")), ms))]);
     const check = async (fn: () => Promise<string>, ms?: number) => { try { return { ok: true, detail: await t(fn(), ms) }; } catch (e) { return { ok: false, detail: (e as Error).message.slice(0, 120) }; } };
     const [localModel, frontier, ensCheck, mbCheck] = await Promise.all([
-      check(async () => { const r = await fetch(`${env.LOCAL_BASE_URL ?? "http://localhost:8000/v1"}/models`); if (!r.ok) throw new Error(`HTTP ${r.status}`); return local.model; }),
+      check(() => local.ping()),
       check(async () => { if (!egress.configured) throw new Error("no API key"); return `${egress.name} → ${defaultClaudeModel}`; }),
       check(async () => { if (!ensRead) return "local JSON policies"; const p = await policies.resolve(defaultAgentName); return `${p.agent}: egress=${p.egress}`; }, 12000), // public RPC: slow when cold
       check(async () => { if (!mb) throw new Error("not configured"); await mb.webhooks(); return env.MULTIBAAS_URL!.replace(/^https?:\/\//, ""); }),
