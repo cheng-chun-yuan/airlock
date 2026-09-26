@@ -339,7 +339,7 @@
   .pill.admin { background:var(--ink); color:var(--canvas); } .pill.approver { background:var(--hold-tint); color:var(--hold); }
   .pill.live { background:var(--go-tint); color:var(--go); } .pill.provisioning { background:var(--hold-tint); color:var(--hold); } .pill.failed { background:var(--ember-tint); color:var(--ember); }
   .form { display:grid; gap:18px; }
-  .fs { border:1px solid var(--hairline); border-radius:14px; padding:18px; margin:0; }
+  .fs { border:1px solid var(--hairline); border-radius:14px; padding:18px; margin:0; min-width:0; overflow-x:auto; }
   .fs legend { font:500 17px var(--display); padding:0 6px; margin-left:-6px; }
   .fs .lede { color:var(--umber); font-size:13.5px; margin:0 0 6px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
@@ -370,9 +370,47 @@
   .inline .field { width:auto; flex:1; min-width:140px; }
   select.field { font-family:var(--body); font-size:14px; }
 
+  /* ---------- manage: sub-navigation ---------- */
+  .subnav { display:flex; gap:4px; border-bottom:1px solid var(--hairline); margin:0 0 20px; overflow-x:auto; scrollbar-width:none; }
+  .subnav button { flex:none; border:0; background:none; padding:8px 12px 10px; margin-bottom:-1px; border-bottom:2px solid transparent; cursor:pointer; color:var(--umber); font:500 13.5px var(--body); white-space:nowrap; }
+  .subnav button:hover { color:var(--ink); }
+  .subnav button.on { color:var(--ink); border-bottom-color:var(--ember); }
+  .subnav .lock { font:500 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--sand); margin-left:6px; }
+
+  /* ---------- agents map: people → agent → policy on ENS ---------- */
+  .amap { position:relative; display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:0 64px; }
+  .amap .wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  .amap .wires path { fill:none; stroke:var(--sand); stroke-width:1.5; transition:stroke .15s; }
+  .amap .wires path.hot { stroke:var(--ember); stroke-width:2; }
+  .amap .wires circle { fill:var(--sand); } .amap .wires circle.hot { fill:var(--ember); }
+  .acol { display:flex; flex-direction:column; min-width:0; position:relative; z-index:1; }
+  .acol > .eyebrow { margin:0 0 8px; }
+  .astack { flex:1; display:flex; flex-direction:column; justify-content:center; gap:8px; }
+  .anode { border:1px solid var(--hairline); border-radius:10px; padding:8px 11px; background:var(--canvas); min-width:0; transition:border-color .15s, box-shadow .15s, opacity .15s; }
+  .anode .t { font:500 14px var(--display); display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .anode .s { font:11.5px var(--mono); color:var(--umber); word-break:break-all; margin-top:1px; }
+  .anode .s a { color:inherit; }
+  .anode .via { display:none; font:500 11.5px var(--mono); color:var(--umber); margin-top:4px; }
+  .anode.none { border-style:dashed; background:var(--haze); }
+  .anode.idle { opacity:.55; }
+  .anode.pol { border-left:3px solid var(--ink); }
+  .anode.pol.default { border-left-color:var(--sand); }
+  .anode .kv { display:grid; grid-template-columns:auto 1fr; gap:1px 10px; margin-top:6px; font-size:12.5px; }
+  .anode .kv span:nth-child(odd) { font:500 10.5px var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--umber); align-self:center; }
+  .anode .kv b { font:500 12.5px var(--mono); } .anode .kv b.shut { color:var(--ember); }
+  .amap.focus .anode:not(.hot) { opacity:.4; }
+  .anode.hot { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
+  @media (max-width: 760px) {
+    .amap { grid-template-columns:minmax(0, 1fr); gap:16px; } .amap .wires { display:none; }
+    .anode .via { display:block; } .amap.focus .anode:not(.hot) { opacity:1; }
+    .acol + .acol::before { content:"↓"; display:block; text-align:center; color:var(--sand); font:500 16px var(--mono); margin:-10px 0 4px; }
+  }
+
   @media (max-width: 900px) {
     header { flex-wrap:wrap; padding:10px 16px; gap:10px 12px; } .brand { letter-spacing:.14em; }
-    .live { order:2; margin-left:auto; } #liveTxt { display:none; } .tabs { order:3; flex-basis:100%; overflow-x:auto; scrollbar-width:none; } .tabs button { flex:none; justify-content:center; white-space:nowrap; }
+    .live { order:2; margin-left:auto; } #liveTxt { display:none; } .tabs { order:3; flex-basis:100%; overflow-x:auto; scrollbar-width:none; } .tabs button { flex:1 0 auto; justify-content:center; white-space:nowrap; padding:6px 7px; font-size:12.5px; gap:4px; }
+    .subnav button { padding:8px 9px 10px; } .subnav .lock { display:none; }
+    .scene-actions { flex-wrap:wrap; max-width:100%; }
     .ticker { order:4; flex-basis:100%; justify-content:flex-start; } .ticker:empty { display:none; } .modepill { display:none; }
     main { padding:16px; } .queue, .try { grid-template-columns:1fr; } .list { position:static; max-height:none; }
     .panes { grid-template-columns:1fr; } .facts { grid-template-columns:1fr; } .decide { grid-template-columns:1fr; }
@@ -447,11 +485,8 @@
     <button data-tab="overview" class="on">Overview</button>
     <button data-tab="queue">Approvals <span class="count" id="nPending"></span></button>
     <button data-tab="playground">Playground</button>
-    <button data-tab="ens">Policy</button>
-    <button data-tab="approvers">Members</button>
     <button data-tab="ledger">Audit</button>
-    <button data-tab="connect">Connect</button>
-    <button data-tab="settings" id="tabSettings" hidden>Settings</button>
+    <button data-tab="manage">Manage</button>
   </nav>
   <div class="ticker" id="ticker" title="Recent decisions: green = sent, red = sealed, striped = blocked"></div>
   <div class="live" id="live"><span class="led"></span><span id="liveTxt">offline</span></div>
@@ -512,10 +547,18 @@
     <div class="panel" id="ensActivityPanel" style="margin-top:16px" hidden><h3>On-chain policy changes <span class="muted" style="font:400 13px var(--body)">· indexed and pushed by Curvegrid MultiBaas</span></h3><p class="muted" style="margin:-4px 0 10px; font-size:13px">Every policy edit, link, access change, approver registration and revocation on Airlock's ENS contracts. Pushed to the gateway by webhook, so changes take effect immediately.</p><div id="ensActivity" class="activity"></div></div>
   </section>
 
+  <!-- Manage: members, agents & policy, models, connect. Each sub-page is still its own #tab-<name> section. -->
+  <section id="tab-manage" hidden>
+    <nav class="subnav" id="subnav" aria-label="Manage"></nav>
   <section id="tab-ens" hidden>
     <div class="ledger-head">
       <div><p class="eyebrow" id="ens-eyebrow">Agents & policy · ENSv2 · read live</p><h2 id="ensTitle">—</h2><div class="root" id="ensSub"></div></div>
       <div style="display:flex; gap:8px"><button class="btn" id="ensRefresh">Refresh</button></div>
+    </div>
+    <div id="agPage" hidden>
+      <div class="panel" style="margin-bottom:16px"><h3>Who runs under which policy</h3><p class="muted" style="margin:-4px 0 12px; font-size:13px">Each person sends as the agent an admin assigned them (Members). Each agent reads its policy from ENS: the gateway default, or a named policy it's linked to.</p><div id="agMap"></div></div>
+      <div class="form" id="setAgents"></div>
+      <p class="eyebrow" style="margin:22px 0 10px">Read live from ENS</p>
     </div>
     <div class="ens-grid">
       <div class="panel" id="ensAgentsPanel" style="grid-column:1 / -1"><h3>Agents · where each policy comes from</h3><p class="muted" id="ensAgentsNote" style="margin:-4px 0 10px; font-size:13px">Registered agents <b>link</b> to one shared policy record (ENSv2 aliasing: edit once, all change). An agent that was never registered falls through <b>wildcard resolution</b> to the org default.</p><div id="ensAgents"></div></div>
@@ -556,7 +599,7 @@
   </section>
 
   <section id="tab-settings" hidden>
-    <div class="ledger-head"><div><p class="eyebrow">Settings</p><h2 id="setTitle">—</h2><div class="root" id="setSub"></div></div></div>
+    <div class="ledger-head"><div><p class="eyebrow">Models · name, models and gateway default policy</p><h2 id="setTitle">—</h2><div class="root" id="setSub"></div></div></div>
     <form class="form" id="setForm" autocomplete="off">
       <fieldset class="fs"><legend>Name</legend><label class="f"><span>Gateway name</span><input class="field" name="name" required maxlength="60" /></label></fieldset>
       <div id="setModels"></div>
@@ -565,7 +608,7 @@
       <div class="inline"><button class="btn" type="button" id="setTest">Test connections</button><button class="btn dark big" id="setSave">Save</button></div>
       <div id="setTestOut"></div><div class="err" id="setErr"></div><div class="ok-note" id="setOk"></div>
     </form>
-    <div class="form" id="setAgents" style="margin-top:18px"></div>
+  </section>
   </section>
 </main>
 </div>
@@ -604,18 +647,37 @@ const viaToggle = () => cfg.worldIdAgents && cfg.worldIdMode !== "mock"
   ? `<div class="via"><span class="eyebrow" style="margin:0">Verify with</span><div class="seg">${[["oidc", "World ID for Agents"], ["idkit", "World App QR (IDKit)"]].map(([k, l]) => `<button data-via="${k}" class="${via === k ? "on" : ""}">${l}</button>`).join("")}</div></div>` : "";
 const wireVia = (root) => $$("[data-via]", root).forEach((b) => (b.onclick = () => { via = b.dataset.via; $$("[data-via]", root).forEach((x) => x.classList.toggle("on", x === b)); }));
 
-/* ---------- tabs ---------- */
-const TABS = ["overview", "queue", "playground", "ens", "approvers", "ledger", "connect", "settings"];
+/* ---------- tabs ----------
+   Top level: Overview, Approvals, Playground, Audit, Manage. Manage holds the gateway's setup as sub-pages, each
+   still its own #tab-<name> section; old hashes (#ens, #approvers, #connect, #settings, #enroll) land on them. */
+const PAGES = ["overview", "queue", "playground", "ledger", "ens", "approvers", "connect", "settings"];
+const ALIAS = { agents:"ens", policy:"ens", members:"approvers", enroll:"approvers", models:"settings", audit:"ledger", approvals:"queue" };
+const TABS = [...PAGES, ...Object.keys(ALIAS), "manage"];
+/** Manage's sub-pages for this gateway and viewer: [section, label, admin-only]. The demo has no settings. */
+const manageSubs = () => isDemo()
+  ? [["ens", "Agents & policy"], ["approvers", "Approvers"], ["connect", "Connect"]]
+  : [["approvers", "Members"], ["ens", "Agents & policy"], ...(cfg.me?.role === "admin" ? [["settings", "Models", true]] : []), ["connect", "Connect"]];
+let lastSub = null;
 function tab(name) {
-  if (!TABS.includes(name) || (name === "settings" && cfg.me?.role !== "admin")) name = "overview";
+  const subs = manageSubs().map(([t]) => t);
+  if (name === "manage") name = subs.includes(lastSub) ? lastSub : subs[0];
+  name = ALIAS[name] ?? name;
+  if (!PAGES.includes(name)) name = "overview";
+  // A Manage page this viewer can't open (Models for non-admins, Settings on the demo) opens Manage's first page.
+  if (["ens", "approvers", "connect", "settings"].includes(name) && !subs.includes(name)) name = subs[0];
+  const inManage = subs.includes(name);
+  if (inManage) lastSub = name;
   if (name !== "queue") history.replaceState(null, "", "#" + name); else if (selected) history.replaceState(null, "", "#" + selected);
-  $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
-  TABS.forEach((t) => ($("#tab-" + t).hidden = t !== name));
+  $$(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === (inManage ? "manage" : name)));
+  $("#tab-manage").hidden = !inManage;
+  $("#subnav").innerHTML = manageSubs().map(([t, label, adminOnly]) => `<button data-sub="${t}" class="${t === name ? "on" : ""}" ${t === name ? 'aria-current="page"' : ""}>${esc(label)}${adminOnly ? '<span class="lock">admin</span>' : ""}</button>`).join("");
+  $$("[data-sub]", $("#subnav")).forEach((b) => (b.onclick = () => tab(b.dataset.sub)));
+  PAGES.forEach((t) => ($("#tab-" + t).hidden = t !== name));
   if (name === "overview") loadOverview();
   if (name === "playground" && !demo.inflight && !demo.id) renderAirlock(null);
   if (name === "ledger") loadLedger();
   if (name === "queue") { const cur = items.find((x) => x.id === selected); const waiting = items.find((x) => x.status === "pending"); if (waiting && (!cur || cur.status !== "pending")) show(waiting.id); }
-  if (name === "ens") loadEns();
+  if (name === "ens") { loadEns(); if (!isDemo()) loadAgents(); }
   if (name === "approvers") isDemo() ? loadApprovers() : loadTeam();
   if (name === "connect") { renderConnect(); loadKeys(); }
   if (name === "settings") loadSettings();
@@ -1327,7 +1389,7 @@ async function enterGateway(slug) {
   show$("screen-gw");
   $("#gwSwitch").innerHTML = ME.gateways.map((g) => `<option value="${esc(g.slug)}" ${g.slug === slug ? "selected" : ""}>${esc(g.name)}</option>`).join("") + `<option value="">All gateways…</option>` + (ME.platform.canCreate ? `<option value="+">＋ New gateway</option>` : "");
   $("#gwSwitch").onchange = (e) => (location.href = e.target.value === "+" ? "/console#new" : e.target.value ? `/console/${e.target.value}` : "/console");
-  $("#tabSettings").hidden = cfg.me?.role !== "admin" || isDemo();
+  $("#agPage").hidden = isDemo(); // your own gateways: the people → agent → policy map and the agents editor
   $("#pgWho").textContent = `${cfg.me?.label ?? "you"}${cfg.me?.role ? ` (${cfg.me.role})` : ""}`;
   // Your own gateways: you run as the agent an admin assigned you (the server enforces it; this just says which).
   $("#demoAgent").hidden = !isDemo();
@@ -1346,7 +1408,6 @@ async function enterGateway(slug) {
   const hash = location.hash.slice(1);
   await loadQueue();
   if (!hash || TABS.includes(hash)) tab(hash || "overview");
-  else if (hash === "enroll") tab("approvers");
   else { selected = hash; tab("queue"); show(selected); }
 
   // Live updates by polling a numbered event log: works through any proxy (Cloudflare tunnels buffer idle
@@ -1775,12 +1836,85 @@ async function viaWallet(method, url, body, status = () => {}) {
   }
 }
 
+/**
+ * The map on Agents & policy: people → the agent an admin assigned them → the ENS policy that agent reads.
+ * Built from the members and agents APIs. A member with no agent sends under the gateway default policy directly.
+ * Wires are an SVG laid over the three columns; on a phone the columns stack and each card says where it points.
+ */
+let agMapEdges = [], agMapRO = null;
+function renderAgentMap(A, team) {
+  const box = $("#agMap");
+  const pols = [{ key:"", label:"gateway default", name:A.defaultPolicy.name, policy:A.defaultPolicy.policy ?? {}, def:true },
+    ...A.policies.map((p) => ({ key:p.label, label:p.label, name:p.name, policy:p.policy ?? {} }))];
+  const pIdx = (k) => Math.max(0, pols.findIndex((p) => p.key === k));
+  const agents = A.agents.map((a) => ({ key:a.label, name:a.name, pol:pols.some((p) => p.key === a.policy) ? a.policy : "", keys:a.keys ?? 0 }));
+  const agentOf = (m) => (m.agent && agents.some((a) => a.key === m.agent) ? m.agent : "∅");
+  const direct = !agents.length || team.some((m) => agentOf(m) === "∅");
+  const aNodes = [...(direct ? [{ key:"∅", none:true, pol:"", keys:0 }] : []), ...agents].sort((a, b) => pIdx(a.pol) - pIdx(b.pol));
+  const aIdx = (k) => aNodes.findIndex((a) => a.key === k);
+  const people = [...team].sort((a, b) => aIdx(agentOf(a)) - aIdx(agentOf(b)) || a.label.localeCompare(b.label));
+  agMapEdges = [...people.map((m) => [`m:${m.address}`, `a:${agentOf(m)}`]), ...aNodes.map((a) => [`a:${a.key}`, `p:${a.pol}`])];
+  const nPeople = (k) => people.filter((m) => agentOf(m) === k).length;
+  const polName = (k) => pols[pIdx(k)].label;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const quorum = (q) => (Number(q) === 0 ? "never leaves" : Number(q) === 1 ? "1 approver" : `${q} approvers`);
+  const col = (title, html) => `<div class="acol"><p class="eyebrow">${title}</p><div class="astack">${html}</div></div>`;
+  const person = (m) => `<div class="anode" data-node="m:${esc(m.address)}"><div class="t">${esc(m.label)}${m.address === cfg.me?.address ? ' <span class="muted" style="font:400 12px var(--body)">(you)</span>' : ""} <span class="pill ${esc(m.role)}">${esc(m.owner ? "owner" : m.role)}</span></div>
+    <div class="s">${esc(shortAddr(m.address))}</div><div class="via">→ ${agentOf(m) === "∅" ? "no agent: gateway default" : esc(agentOf(m))}</div></div>`;
+  const agent = (a) => {
+    const n = a.none ? nPeople("∅") : nPeople(a.key), idle = !a.none && !n && !a.keys;
+    return `<div class="anode ${a.none ? "none" : ""} ${idle ? "idle" : ""}" data-node="a:${esc(a.key)}"><div class="t">${a.none ? "No agent" : esc(a.key)}</div>
+      <div class="s">${a.none ? "sends as the gateway itself" : ensApp(a.name)}</div>
+      <div class="s">${plural(n, "person").replace("persons", "people")}${a.keys ? ` · ${plural(a.keys, "service key")}` : ""}</div><div class="via">→ ${esc(polName(a.pol))}</div></div>`;
+  };
+  const policy = (p) => {
+    const used = aNodes.filter((a) => a.pol === p.key), idle = !p.def && !used.length, eg = p.policy.egress;
+    return `<div class="anode pol ${p.def ? "default" : ""} ${idle ? "idle" : ""}" data-node="p:${esc(p.key)}"><div class="t">${esc(p.label)} <span class="pill">${p.def ? "default" : "named"}</span></div>
+      <div class="s">${ensApp(p.name)}</div>
+      <div class="kv"><span>max class</span><b>${esc(p.policy.maxClass ?? "—")}</b><span>egress</span><b class="${eg === "block" ? "shut" : ""}">${eg === "block" ? "local only" : esc(eg ?? "—")}</b><span>high risk</span><b>${esc(p.policy.highRiskQuorum === undefined ? "—" : quorum(p.policy.highRiskQuorum))}</b></div>
+      ${idle ? `<div class="s" style="margin-top:4px">no agent linked</div>` : ""}</div>`;
+  };
+  box.innerHTML = `<div class="amap"><svg class="wires" aria-hidden="true"></svg>
+    ${col(`People · ${people.length}`, people.map(person).join(""))}
+    ${col(`Agents · ${agents.length}`, aNodes.map(agent).join(""))}
+    ${col(`Policies on ENS · ${pols.length}`, pols.map(policy).join(""))}</div>
+    ${agents.length ? "" : `<p class="muted" style="font-size:12.5px; margin:12px 0 0">No agents yet: everyone sends under the gateway default policy. ${cfg.me?.role === "admin" ? "Add an agent below to give a group of people a different policy." : ""}</p>`}`;
+  const map = $(".amap", box);
+  // Hover a card: light up the chain it belongs to (its people, its agent, its policy).
+  $$(".anode", map).forEach((n) => {
+    n.onmouseenter = () => {
+      const on = new Set([n.dataset.node]);
+      for (const dir of [0, 1]) { let grew = true; const seen = new Set([n.dataset.node]); while (grew) { grew = false; for (const e of agMapEdges) if (seen.has(e[dir]) && !seen.has(e[1 - dir])) { seen.add(e[1 - dir]); on.add(e[1 - dir]); grew = true; } } }
+      map.classList.add("focus");
+      $$(".anode", map).forEach((x) => x.classList.toggle("hot", on.has(x.dataset.node)));
+      $$(".wires [data-e]", map).forEach((w) => { const [f, t] = w.dataset.e.split("|"); w.classList.toggle("hot", on.has(f) && on.has(t)); });
+    };
+    n.onmouseleave = () => { map.classList.remove("focus"); $$(".hot", map).forEach((x) => x.classList.remove("hot")); };
+  });
+  drawAgentWires();
+  if (!agMapRO) { agMapRO = new ResizeObserver(() => drawAgentWires()); agMapRO.observe(box); document.fonts?.ready.then(drawAgentWires); }
+}
+function drawAgentWires() {
+  const map = $("#agMap .amap"), svg = map && $(".wires", map);
+  if (!svg || getComputedStyle(svg).display === "none") return;
+  const o = map.getBoundingClientRect(), node = (id) => map.querySelector(`[data-node="${CSS.escape(id)}"]`);
+  svg.innerHTML = agMapEdges.map(([f, t]) => {
+    const a = node(f)?.getBoundingClientRect(), b = node(t)?.getBoundingClientRect();
+    if (!a || !b) return "";
+    const x1 = a.right - o.left, y1 = a.top + a.height / 2 - o.top, x2 = b.left - o.left, y2 = b.top + b.height / 2 - o.top, mx = (x1 + x2) / 2;
+    const e = esc(`${f}|${t}`);
+    return `<path data-e="${e}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" /><circle data-e="${e}" cx="${x1}" cy="${y1}" r="2.5" /><circle data-e="${e}" cx="${x2}" cy="${y2}" r="2.5" />`;
+  }).join("");
+}
+
 /* Agents: <agent>.agents.<slug> names. Each follows the gateway policy (ENS wildcard) or is linked to a named policy. */
 async function loadAgents() {
   const el = $("#setAgents");
-  const A = await j(`/api/gateways/${GW}/agents`);
-  if (A.error) { el.innerHTML = ""; return; }
+  const [A, team] = await Promise.all([j(`/api/gateways/${GW}/agents`), j(`/api/gateways/${GW}/members`)]);
+  if (A.error) { el.innerHTML = ""; $("#agMap").innerHTML = `<div class="muted">${esc(A.error)}</div>`; return; }
+  renderAgentMap(A, Array.isArray(team) ? team : []);
   const note = (html) => `<p class="muted" style="margin:-4px 0 10px; font-size:13px">${html}</p>`;
+  if (cfg.me?.role !== "admin") { el.innerHTML = note(`Admins create agents and named policies here, and assign each member an agent on the Members page.`); return; }
   if (!A.ready) {
     el.innerHTML = `<fieldset class="fs"><legend>Agents</legend>${note(`Give each agent its own ENS name, <span class="mono">&lt;agent&gt;.agents.${esc(cfg.org)}</span>, so API keys run as it and the audit shows which one sent what. This gateway was created before agents existed: its owner's wallet signs a one-time ENS setup (up to two Sepolia transactions).`)}
       <div class="inline"><button class="btn dark" type="button" id="agSetup">Set up agents on ENS</button></div><div class="err" id="agErr"></div></fieldset>`;
@@ -1803,7 +1937,7 @@ async function loadAgents() {
     <div class="err" id="agErr"></div>
   </fieldset>
   <fieldset class="fs"><legend>Named policies</legend>
-    ${note(`Besides the gateway policy above, stricter (or looser) policies agents can be linked to. Each is its own ENS record, <span class="mono">&lt;name&gt;.policy.${esc(cfg.org)}</span>; your wallet signs every change.`)}
+    ${note(`Besides the gateway default policy (Models), stricter (or looser) policies agents can be linked to. Each is its own ENS record, <span class="mono">&lt;name&gt;.policy.${esc(cfg.org)}</span>; your wallet signs every change.`)}
     ${A.policies.length ? `<table class="matrix"><tr><th>policy</th><th>maxClass</th><th>egress</th><th>quorum</th><th>agents</th><th></th></tr>${polRows}</table>` : ""}
     <form id="polForm" style="margin-top:10px"><label class="f"><span>Policy name</span><input class="field" name="label" placeholder="strict" maxlength="32" required /></label><div id="polFields"></div>
       <div class="inline"><button class="btn" id="polSave">Save policy</button></div><div class="err" id="polErr"></div></form>
@@ -1860,11 +1994,10 @@ async function loadSettings() {
   form.name.value = g.name;
   $("#setModels").innerHTML = modelsForm(g.settings); $("#setPolicy").innerHTML = policyForm(g.settings.policy);
   wireModels(form);
-  loadAgents();
   $("#setErr").textContent = ""; $("#setOk").textContent = ""; $("#setTestOut").innerHTML = "";
   $("#setTest").onclick = () => testModels(form, $("#setTestOut"), GW);
   $("#setPolicyNote").innerHTML = g.policySigner === "owner"
-    ? `Policy changes are a Sepolia transaction signed by the owner's wallet (${esc(shortAddr(g.owner))}). The platform holds no rights to these records, as the Policy tab's “Who may change what” table shows from the live contract.`
+    ? `Policy changes are a Sepolia transaction signed by the owner's wallet (${esc(shortAddr(g.owner))}). The platform holds no rights to these records, as the “Who may change what” table under Agents & policy shows from the live contract.`
     : "";
   form.onsubmit = async (e) => {
     e.preventDefault(); $("#setErr").textContent = ""; $("#setOk").textContent = "";
