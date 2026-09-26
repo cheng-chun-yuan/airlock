@@ -44,6 +44,8 @@ Anyone can run their own airlock, with their own models and people:
 
 Removing a member deletes their keys and revokes their approver name on ENS.
 
+**What the platform can and can't do.** After setup the platform hands the gateway over: its key keeps only `airlock.approver` (to enroll approvers) and `airlock.auditRoot` (to anchor the audit log). It **can't change your policy**: a policy change is a transaction your wallet signs, and the gateway checks the receipt before saving. One power remains, by the nature of subnames: the platform controls `airlock.eth`, so it could point `<slug>.airlock.eth` elsewhere (take the name back). It can't rewrite your policy under it.
+
 ## 🧑‍⚖️ For judges: the 3-minute tour
 
 Open <https://airlock.polyoctant.com> and sign in with your wallet. Open **Airlock demo** (shared, every visitor can play every part), or create your own gateway (see *Your own gateway* below).
