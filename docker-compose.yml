@@ -1,18 +1,29 @@
 services:
   gateway:
     build: { context: ., network: host }
+    restart: unless-stopped
     ports: ["8787:8787"]
     env_file: [{ path: .env, required: false }]
     environment:
-      PRESIDIO_URL: http://presidio-analyzer:3000
       # vLLM runs on the host (GB10); override if it lives elsewhere
       LOCAL_BASE_URL: ${LOCAL_BASE_URL:-http://host.docker.internal:8000/v1}
     extra_hosts: ["host.docker.internal:host-gateway"]
     volumes: ["./data:/app/data"]
-    depends_on: [presidio-analyzer]
 
+  # Optional: docker compose --profile presidio up -d  (and set PRESIDIO_URL=http://presidio-analyzer:3000 in .env)
   presidio-analyzer:
     image: mcr.microsoft.com/presidio-analyzer:latest
+    profiles: [presidio]
     ports: ["5002:3000"]
+
+  # Optional: docker compose --profile tunnel up -d
+  # Serves the gateway on an existing Cloudflare tunnel: TUNNEL_ID in .env, its credentials at ./.cloudflared/<TUNNEL_ID>.json
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --cred-file /etc/cloudflared/${TUNNEL_ID}.json --url http://gateway:8787 ${TUNNEL_ID}
+    volumes: ["./.cloudflared:/etc/cloudflared:ro"]
+    depends_on: [gateway]
 
 # LibreChat: point a custom endpoint at http://<host>:8787/v1 — see demo/librechat.yaml
