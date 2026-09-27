@@ -258,7 +258,10 @@ export type Ask = (system: string, user: string) => Promise<string>;
 
 function firstJson(text: string): unknown {
   const s = text.replace(/```(?:json)?/g, "");
-  for (const [o, c] of [["{", "}"], ["[", "]"]] as const) {
+  // Whichever bracket opens first is the outer value: `[{…}]` must parse as the array, not its first object.
+  const pairs = [["{", "}"], ["[", "]"]] as const;
+  const order = s.indexOf("[") >= 0 && (s.indexOf("{") < 0 || s.indexOf("[") < s.indexOf("{")) ? [pairs[1], pairs[0]] : pairs;
+  for (const [o, c] of order) {
     const i = s.indexOf(o), k = s.lastIndexOf(c);
     if (i >= 0 && k > i) {
       try {
@@ -269,11 +272,21 @@ function firstJson(text: string): unknown {
   return null;
 }
 
-const TAG_SYSTEM = `You find indirect identifiers in business text: substrings that could single out a specific person, company, deal or place even without a name — e.g. job title + organisation context, unique descriptors ("the largest bank in Taiwan"), project codenames, internal ids, addresses.
+const TAG_SYSTEM = `You find identifiers in business text. Tag every name of a real person, company, organisation, city, region, country or product (e.g. "Samsung Electronics", "Suwon", "iPhone 17"), and every indirect identifier: substrings that could single out a specific person, company, deal or place even without a name — e.g. job title + organisation context, unique descriptors ("the largest bank in Taiwan"), project codenames, internal ids, addresses.
 Return ONLY a JSON array of {"text": "<exact substring>", "type": "PERSON|ORG|LOCATION|PROJECT|ID|INDIRECT"}. Copy substrings verbatim. Return [] if none. Do not include generic words.`;
 
+/** Models answer "organisation", "Company", "city"…: fold them onto our placeholder types. */
+function tagType(t = ""): string {
+  const u = t.toUpperCase();
+  if (/^(ORG|COMPAN|BUSINESS|BRAND)/.test(u)) return "ORG";
+  if (/^(PERSON|PEOPLE|NAME|INDIVIDUAL)/.test(u)) return "PERSON";
+  if (/^(LOC|PLACE|CITY|REGION|COUNTRY|ADDRESS|GPE)/.test(u)) return "LOCATION";
+  if (/^(PROJ|PRODUCT|CODENAME)/.test(u)) return "PROJECT";
+  return u === "ID" ? "ID" : "INDIRECT";
+}
+
 /**
- * Redactor step 3: the local model tags indirect identifiers that rules and
+ * Redactor step 3: the local model tags identifiers that rules and
  * dictionaries miss. Only verbatim substrings (≥4 chars) are accepted; results
  * are cached per text so a growing conversation isn't re-tagged every turn.
  */
@@ -291,7 +304,7 @@ export function llmRecognizer(ask: Ask, maxChars = 12_000): Recognizer {
         for (const f of found.slice(0, 30) as { text?: string; type?: string }[]) {
           const t = typeof f?.text === "string" ? f.text.trim() : "";
           if (t.length < 4) continue;
-          const type = /^(PERSON|ORG|LOCATION|PROJECT|ID|INDIRECT)$/.test(f.type ?? "") ? f.type! : "INDIRECT";
+          const type = tagType(f.type);
           for (let i = text.indexOf(t); i !== -1; i = text.indexOf(t, i + t.length)) spans.push({ start: i, end: i + t.length, type });
         }
       cache.set(text, spans);

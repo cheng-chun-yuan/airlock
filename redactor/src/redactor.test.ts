@@ -76,6 +76,15 @@ test("llm recognizer accepts only verbatim substrings", async () => {
   assert.deepEqual(spans.map((s) => text.slice(s.start, s.end)), ["the largest chip foundry in Hsinchu", "Project Bluebird"]);
 });
 
+test("local tagger: a one-item array parses, loose types map, and names outside the dictionary get replaced", async () => {
+  const text = "CONFIDENTIAL. Our client Samsung Electronics, headquartered in Suwon, supplies OLED panels.";
+  const one = llmRecognizer(async () => 'Sure:\n[{"text": "Samsung Electronics", "type": "organisation"}]');
+  assert.deepEqual((await one.find(text)).map((s) => s.type), ["ORG"]);
+  const r = new PipelineRedactor([llmRecognizer(async () => '[{"text":"Samsung Electronics","type":"Company"},{"text":"Suwon","type":"city"}]')]);
+  const out = await r.redact([{ role: "user", content: text }], newSession("t5c"));
+  assert.equal(out.payload[0].content, "CONFIDENTIAL. Our client <ORG_1>, headquartered in <LOCATION_1>, supplies OLED panels.");
+});
+
 test("dictionary aliases share the canonical placeholder, so short forms can't leak", async () => {
   const s = newSession("t6");
   const r = new PipelineRedactor([dictionaryRecognizer({ ORG: [["Kestrelwood Analytics", "Kestrelwood"]] })]);
